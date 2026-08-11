@@ -1,0 +1,148 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// SQLite does not support native enums; these fields use validated string values.
+// Role: ADMIN | DOCTOR | RECEPTIONIST
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("RECEPTIONIST")
+  createdAt DateTime @default(now())
+}
+
+model Patient {
+  id               String    @id @default(cuid())
+  name             String
+  phone            String
+  email            String?
+  address          String?
+  dob              DateTime?
+  gender           String?
+  occupation       String?
+  referredBy       String?
+  bloodGroup       String?
+  emergencyContact String?
+  notes            String?
+  photoUrl         String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  diagnoses Diagnosis[]
+  packages  TreatmentPackage[]
+  visits    Visit[]
+  payments  Payment[]
+}
+
+model Diagnosis {
+  id            String   @id @default(cuid())
+  patientId     String
+  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  date          DateTime @default(now())
+  title         String
+  details       String?
+  treatmentPlan String?
+  remarks       String?
+  doctorName    String?
+  createdAt     DateTime @default(now())
+
+  packages TreatmentPackage[]
+  visits   Visit[]
+}
+
+// status: ACTIVE | COMPLETED | CANCELLED
+model TreatmentPackage {
+  id            String     @id @default(cuid())
+  patientId     String
+  patient       Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  diagnosisId   String?
+  diagnosis     Diagnosis? @relation(fields: [diagnosisId], references: [id])
+  title         String
+  totalSessions Int
+  feePerSession Float
+  totalFee      Float
+  startDate     DateTime   @default(now())
+  status        String     @default("ACTIVE")
+  notes         String?
+  createdAt     DateTime   @default(now())
+
+  visits       Visit[]
+  installments Installment[]
+  payments     Payment[]
+}
+
+// status: PENDING | PAID | OVERDUE
+model Installment {
+  id        String           @id @default(cuid())
+  packageId String
+  package   TreatmentPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  amount    Float
+  dueDate   DateTime
+  paidDate  DateTime?
+  status    String           @default("PENDING")
+  notes     String?
+  createdAt DateTime         @default(now())
+}
+
+// type: INITIAL_CONSULT | SESSION | FOLLOWUP
+// attendance: SCHEDULED | PRESENT | ABSENT | CARRIED_FORWARD | CANCELLED
+model Visit {
+  id             String            @id @default(cuid())
+  patientId      String
+  patient        Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  packageId      String?
+  package        TreatmentPackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  diagnosisId    String?
+  diagnosis      Diagnosis?        @relation(fields: [diagnosisId], references: [id])
+  sessionNumber  Int?
+  scheduledDate  DateTime
+  completedDate  DateTime?
+  type           String            @default("SESSION")
+  fee            Float             @default(0)
+  feeCollected   Boolean           @default(false)
+  attendance     String            @default("SCHEDULED")
+  carriedForward Boolean           @default(false)
+  carriedFromId  String?
+  remarks        String?
+  treatmentNotes String?
+  createdAt      DateTime          @default(now())
+
+  payments Payment[]
+}
+
+// type: ADVANCE | SESSION_FEE | INSTALLMENT | VISIT_FEE | REFUND
+// method: CASH | CARD | UPI | BANK_TRANSFER | OTHER
+model Payment {
+  id        String            @id @default(cuid())
+  patientId String
+  patient   Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  packageId String?
+  package   TreatmentPackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  visitId   String?
+  visit     Visit?            @relation(fields: [visitId], references: [id], onDelete: SetNull)
+  amount    Float
+  type      String
+  method    String            @default("CASH")
+  date      DateTime          @default(now())
+  notes     String?
+  createdAt DateTime          @default(now())
+}
+
+// category: SALARY | RENT | UTILITIES | EQUIPMENT | MARKETING | MAINTENANCE | OTHER
+model Expense {
+  id        String   @id @default(cuid())
+  category  String
+  title     String
+  amount    Float
+  date      DateTime @default(now())
+  paidTo    String?
+  notes     String?
+  createdAt DateTime @default(now())
+}
