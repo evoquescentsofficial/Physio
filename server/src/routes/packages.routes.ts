@@ -80,8 +80,12 @@ router.post(
       dueDate: new Date(i.dueDate),
     }));
 
-    if (!installmentPlan && installmentCount > 0) {
-      const balance = Math.max(totalFee - advanceAmount, 0);
+    const balanceAfterAdvance = Math.max(totalFee - advanceAmount, 0);
+
+    // Nothing left to owe (advance covered or exceeded the total) means no installments —
+    // otherwise the package would be given a schedule of zero-rupee payments.
+    if (!installmentPlan && installmentCount > 0 && balanceAfterAdvance > 0) {
+      const balance = balanceAfterAdvance;
       const per = Math.floor(balance / installmentCount);
       installmentPlan = Array.from({ length: installmentCount }).map((_, idx) => {
         const dueDate = new Date(startDate);

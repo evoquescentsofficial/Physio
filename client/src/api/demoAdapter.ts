@@ -70,6 +70,30 @@ function lastNMonthKeys(n: number) {
   return keys;
 }
 
+/** Mirrors the server's account calculation — see computeAccounts in reports.routes.ts. */
+function computeAccounts() {
+  return db.patients.map((p) => {
+    const packageValue = db.packages
+      .filter((k) => k.patientId === p.id && k.status !== 'CANCELLED')
+      .reduce((s, k) => s + k.totalFee, 0);
+    const paid = db.payments
+      .filter(
+        (y) =>
+          y.patientId === p.id &&
+          (y.packageId !== null || y.type === 'ADVANCE' || y.type === 'INSTALLMENT')
+      )
+      .reduce((s, y) => s + (y.type === 'REFUND' ? -y.amount : y.amount), 0);
+    const balance = packageValue - paid;
+    return {
+      patient: { id: p.id, name: p.name, phone: p.phone },
+      packageValue,
+      paid,
+      due: Math.max(balance, 0),
+      credit: Math.max(-balance, 0),
+    };
+  });
+}
+
 const patientBrief = (patientId: string) => {
   const p = db.patients.find((x) => x.id === patientId);
   return p ? { name: p.name, phone: p.phone } : undefined;
@@ -330,8 +354,8 @@ function handle(method: string, path: string, params: any, body: any): any {
             notes: null,
           });
         }
-      } else if (count > 0) {
-        const balance = Math.max(totalFee - advance, 0);
+      } else if (count > 0 && totalFee - advance > 0) {
+        const balance = totalFee - advance;
         const per = Math.floor(balance / count);
         for (let i = 0; i < count; i++) {
           const due = new Date(startDate);
@@ -609,14 +633,9 @@ function handle(method: string, path: string, params: any, body: any): any {
       const monthRevenue = monthPayments.reduce((s, p) => s + p.amount, 0);
       const monthExpenseTotal = monthExpenses.reduce((s, e) => s + e.amount, 0);
 
-      const outstandingDues = db.packages
-        .filter((k) => k.status === 'ACTIVE')
-        .reduce((sum, k) => {
-          const paid = db.payments
-            .filter((y) => y.packageId === k.id)
-            .reduce((s, y) => s + y.amount, 0);
-          return sum + Math.max(k.totalFee - paid, 0);
-        }, 0);
+      const accounts = computeAccounts();
+      const outstandingDues = accounts.reduce((s, a) => s + a.due, 0);
+      const patientCredits = accounts.reduce((s, a) => s + a.credit, 0);
 
       return {
         totalPatients: db.patients.length,
@@ -631,6 +650,7 @@ function handle(method: string, path: string, params: any, body: any): any {
         monthExpenses: monthExpenseTotal,
         monthProfit: monthRevenue - monthExpenseTotal,
         outstandingDues,
+        patientCredits,
       };
     }
 
@@ -702,24 +722,15 @@ function handle(method: string, path: string, params: any, body: any): any {
     }
 
     if (seg[1] === 'outstanding') {
-      return db.packages
-        .filter((k) => k.status === 'ACTIVE')
-        .map((k) => {
-          const paid = db.payments
-            .filter((y) => y.packageId === k.id)
-            .reduce((s, y) => s + y.amount, 0);
-          const patient = db.patients.find((p) => p.id === k.patientId)!;
-          return {
-            packageId: k.id,
-            patient: { id: patient.id, name: patient.name, phone: patient.phone },
-            title: k.title,
-            totalFee: k.totalFee,
-            paid,
-            due: Math.max(k.totalFee - paid, 0),
-          };
-        })
-        .filter((o) => o.due > 0)
+      return computeAccounts()
+        .filter((a) => a.due > 0)
         .sort((a, b) => b.due - a.due);
+    }
+
+    if (seg[1] === 'credits') {
+      return computeAccounts()
+        .filter((a) => a.credit > 0)
+        .sort((a, b) => b.credit - a.credit);
     }
   }
 

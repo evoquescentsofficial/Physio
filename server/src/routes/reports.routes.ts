@@ -6,6 +6,47 @@ import { requireAuth } from '../middleware/auth';
 const router = Router();
 router.use(requireAuth);
 
+/**
+ * A patient's money position, computed across their whole account rather than one package,
+ * so an overpayment on one package is automatically available against the next.
+ *
+ * Only package charges create a debt. Checkup fees and single-session fees are settled as
+ * they happen, so they cancel out and are excluded from both sides — but an advance or an
+ * installment paid without naming a package is money sitting on the account, and counts.
+ */
+async function computeAccounts() {
+  const patients = await prisma.patient.findMany({
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      packages: { select: { totalFee: true, status: true } },
+      payments: { select: { amount: true, type: true, packageId: true } },
+    },
+  });
+
+  return patients.map((p) => {
+    const packageValue = p.packages
+      .filter((k) => k.status !== 'CANCELLED')
+      .reduce((s, k) => s + k.totalFee, 0);
+
+    const paid = p.payments.reduce((s, pay) => {
+      const onAccount = pay.packageId !== null || pay.type === 'ADVANCE' || pay.type === 'INSTALLMENT';
+      if (!onAccount) return s;
+      return s + (pay.type === 'REFUND' ? -pay.amount : pay.amount);
+    }, 0);
+
+    const balance = packageValue - paid;
+    return {
+      patient: { id: p.id, name: p.name, phone: p.phone },
+      packageValue,
+      paid,
+      due: Math.max(balance, 0),
+      credit: Math.max(-balance, 0),
+    };
+  });
+}
+
 function monthKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
@@ -53,15 +94,11 @@ router.get(
     const monthRevenue = monthPayments.reduce((s, p) => s + p.amount, 0);
     const monthExpenseTotal = monthExpenses.reduce((s, e) => s + e.amount, 0);
 
-    // outstanding dues = totalFee of active packages - payments received against those packages
-    const activePkgs = await prisma.treatmentPackage.findMany({
-      where: { status: 'ACTIVE' },
-      include: { payments: true },
-    });
-    const outstandingDues = activePkgs.reduce((sum, p) => {
-      const paid = p.payments.reduce((s, pay) => s + pay.amount, 0);
-      return sum + Math.max(p.totalFee - paid, 0);
-    }, 0);
+    // One patient's credit cannot pay another patient's bill, so the totals sum each side
+    // separately rather than netting the whole clinic to one figure.
+    const accounts = await computeAccounts();
+    const outstandingDues = accounts.reduce((s, a) => s + a.due, 0);
+    const patientCredits = accounts.reduce((s, a) => s + a.credit, 0);
 
     res.json({
       totalPatients,
@@ -72,6 +109,7 @@ router.get(
       monthExpenses: monthExpenseTotal,
       monthProfit: monthRevenue - monthExpenseTotal,
       outstandingDues,
+      patientCredits,
     });
   })
 );
@@ -193,28 +231,18 @@ router.get(
 router.get(
   '/outstanding',
   asyncHandler(async (_req, res) => {
-    const packages = await prisma.treatmentPackage.findMany({
-      where: { status: 'ACTIVE' },
-      include: { patient: { select: { id: true, name: true, phone: true } }, payments: true },
-    });
+    const accounts = await computeAccounts();
+    res.json(accounts.filter((a) => a.due > 0).sort((a, b) => b.due - a.due));
+  })
+);
 
-    const outstanding = packages
-      .map((p) => {
-        const paid = p.payments.reduce((s, pay) => s + pay.amount, 0);
-        const due = Math.max(p.totalFee - paid, 0);
-        return {
-          packageId: p.id,
-          patient: p.patient,
-          title: p.title,
-          totalFee: p.totalFee,
-          paid,
-          due,
-        };
-      })
-      .filter((p) => p.due > 0)
-      .sort((a, b) => b.due - a.due);
-
-    res.json(outstanding);
+// Patients who have paid more than they have been charged — the surplus is held on their
+// account and offsets whatever they are billed next.
+router.get(
+  '/credits',
+  asyncHandler(async (_req, res) => {
+    const accounts = await computeAccounts();
+    res.json(accounts.filter((a) => a.credit > 0).sort((a, b) => b.credit - a.credit));
   })
 );
 

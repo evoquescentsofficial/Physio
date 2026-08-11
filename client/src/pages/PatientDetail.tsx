@@ -43,12 +43,17 @@ export default function PatientDetail() {
 
   const payments = patient.payments || [];
   const totalPaid = payments.reduce((s, p) => s + (p.type === 'REFUND' ? -p.amount : p.amount), 0);
-  // Balance is owed on packages only — checkup and single-session fees are paid as they happen.
-  const packageValue = (patient.packages || []).reduce((s, p) => s + p.totalFee, 0);
-  const paidAgainstPackages = payments
-    .filter((p) => p.packageId)
-    .reduce((s, p) => s + p.amount, 0);
-  const balanceDue = Math.max(packageValue - paidAgainstPackages, 0);
+  // Only packages create a debt; checkup and single-session fees are settled as they happen.
+  // Advances and installments count even without a package — that is money on account.
+  const packageValue = (patient.packages || [])
+    .filter((p) => p.status !== 'CANCELLED')
+    .reduce((s, p) => s + p.totalFee, 0);
+  const paidOnAccount = payments
+    .filter((p) => p.packageId || p.type === 'ADVANCE' || p.type === 'INSTALLMENT')
+    .reduce((s, p) => s + (p.type === 'REFUND' ? -p.amount : p.amount), 0);
+  const accountBalance = packageValue - paidOnAccount;
+  const balanceDue = Math.max(accountBalance, 0);
+  const creditBalance = Math.max(-accountBalance, 0);
   const sessionsDone = (patient.visits || []).filter((v) => v.attendance === 'PRESENT').length;
   const sessionsPending = (patient.visits || []).filter((v) => v.attendance === 'SCHEDULED').length;
 
@@ -76,19 +81,28 @@ export default function PatientDetail() {
         </div>
         <div className="grid gap-px bg-ink-100 sm:grid-cols-4">
           {[
-            ['Package Value', currency(packageValue)],
-            ['Total Paid', currency(totalPaid)],
-            ['Balance Due', currency(balanceDue)],
-            ['Sessions', `${sessionsDone} done · ${sessionsPending} pending`],
-          ].map(([label, value]) => (
+            ['Package Value', currency(packageValue), ''],
+            ['Total Paid', currency(totalPaid), ''],
+            creditBalance > 0
+              ? ['Credit Balance', currency(creditBalance), 'text-emerald-600']
+              : ['Balance Due', currency(balanceDue), balanceDue > 0 ? 'text-red-600' : ''],
+            ['Sessions', `${sessionsDone} done · ${sessionsPending} pending`, ''],
+          ].map(([label, value, tone]) => (
             <div key={label} className="bg-white px-5 py-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-ink-400">
                 {label}
               </div>
-              <div className="mt-1 font-bold text-ink-900">{value}</div>
+              <div className={`mt-1 font-bold ${tone || 'text-ink-900'}`}>{value}</div>
             </div>
           ))}
         </div>
+        {creditBalance > 0 && (
+          <div className="border-t border-emerald-100 bg-emerald-50 px-5 py-3 text-sm text-emerald-800">
+            This patient has paid <strong>{currency(creditBalance)}</strong> more than they have
+            been charged. It stays on their account and is taken off their next package
+            automatically.
+          </div>
+        )}
       </Card>
 
       <CheckupFeeBanner patient={patient} reload={load} />
@@ -420,10 +434,23 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
     setOpen(true);
   }
 
+  // Existing credit on the account is applied to this package before anything is owed.
+  const existingCredit = (() => {
+    const value = (patient.packages || [])
+      .filter((p) => p.status !== 'CANCELLED')
+      .reduce((s, p) => s + p.totalFee, 0);
+    const paid = (patient.payments || [])
+      .filter((p) => p.packageId || p.type === 'ADVANCE' || p.type === 'INSTALLMENT')
+      .reduce((s, p) => s + (p.type === 'REFUND' ? -p.amount : p.amount), 0);
+    return Math.max(paid - value, 0);
+  })();
+
   const totalFee = form.totalSessions * form.feePerSession;
-  const balance = Math.max(totalFee - form.advanceAmount, 0);
+  const settled = form.advanceAmount + existingCredit;
+  const balance = Math.max(totalFee - settled, 0);
+  const newCredit = Math.max(settled - totalFee, 0);
   const perInstallment =
-    form.installmentCount > 0 ? Math.floor(balance / form.installmentCount) : 0;
+    form.installmentCount > 0 && balance > 0 ? Math.floor(balance / form.installmentCount) : 0;
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -513,11 +540,20 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                 <div className="mt-4 grid gap-4 sm:grid-cols-4">
                   <StatCard label="Total Fee" value={currency(p.totalFee)} />
                   <StatCard label="Paid" value={currency(paid)} accent="emerald" />
-                  <StatCard
-                    label="Balance"
-                    value={currency(Math.max(p.totalFee - paid, 0))}
-                    accent="red"
-                  />
+                  {paid > p.totalFee ? (
+                    <StatCard
+                      label="Overpaid (credit)"
+                      value={currency(paid - p.totalFee)}
+                      accent="emerald"
+                      hint="Held on the patient's account"
+                    />
+                  ) : (
+                    <StatCard
+                      label="Balance"
+                      value={currency(p.totalFee - paid)}
+                      accent="red"
+                    />
+                  )}
                   <StatCard
                     label="Progress"
                     value={`${done}/${p.totalSessions}`}
@@ -710,15 +746,33 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                 − {currency(form.advanceAmount)}
               </span>
             </div>
+            {existingCredit > 0 && (
+              <div className="flex justify-between py-1">
+                <span className="text-ink-600">Credit already on account</span>
+                <span className="font-semibold text-emerald-600">− {currency(existingCredit)}</span>
+              </div>
+            )}
             <div className="flex justify-between border-t border-ink-200 py-1 pt-2">
-              <span className="text-ink-600">Balance</span>
+              <span className="text-ink-600">{newCredit > 0 ? 'Balance' : 'Balance to pay'}</span>
               <span className="font-bold text-ink-900">{currency(balance)}</span>
             </div>
+            {newCredit > 0 && (
+              <div className="mt-2 rounded bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                Paid <span className="font-semibold">{currency(newCredit)}</span> more than this
+                package costs. The extra stays as credit on the patient's account and comes off
+                their next package automatically.
+              </div>
+            )}
             {form.installmentCount > 0 && balance > 0 && (
               <div className="mt-2 rounded bg-white px-3 py-2 text-xs text-ink-600">
                 {form.installmentCount} monthly installments of about{' '}
                 <span className="font-semibold text-ink-900">{currency(perInstallment)}</span>,
                 first one due a month after the start date.
+              </div>
+            )}
+            {form.installmentCount > 0 && balance === 0 && (
+              <div className="mt-2 rounded bg-white px-3 py-2 text-xs text-ink-600">
+                Nothing left to pay, so no installments will be created.
               </div>
             )}
           </div>
