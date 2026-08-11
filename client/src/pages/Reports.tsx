@@ -114,6 +114,7 @@ export default function Reports() {
             <YAxis stroke="#9fabc9" fontSize={12} />
             <Tooltip formatter={(v: number) => currency(v)} />
             <Legend fontSize={11} />
+            <Bar dataKey="CHECKUP_FEE" name="Checkup fees" stackId="a" fill="#0f766e" />
             <Bar dataKey="ADVANCE" name="Advances" stackId="a" fill="#1d45c9" />
             <Bar dataKey="SESSION_FEE" name="Session fees" stackId="a" fill="#3b76f0" />
             <Bar dataKey="INSTALLMENT" name="Installments" stackId="a" fill="#93bafc" />

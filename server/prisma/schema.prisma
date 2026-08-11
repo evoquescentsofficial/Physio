@@ -135,6 +135,17 @@ model Payment {
   createdAt DateTime          @default(now())
 }
 
+// Single-row table (id is always "clinic") holding clinic-wide defaults.
+model ClinicSettings {
+  id                String   @id @default("clinic")
+  clinicName        String   @default("Physio Fitness Clinic")
+  phone             String?
+  address           String?
+  checkupFee        Float    @default(1000)
+  defaultSessionFee Float    @default(1500)
+  updatedAt         DateTime @updatedAt
+}
+
 // category: SALARY | RENT | UTILITIES | EQUIPMENT | MARKETING | MAINTENANCE | OTHER
 model Expense {
   id        String   @id @default(cuid())

@@ -13,6 +13,7 @@ import {
   toInputDate,
 } from '../components/ui';
 import { Diagnosis, Patient, Payment, TreatmentPackage, Visit } from '../types';
+import { useSettings } from '../context/SettingsContext';
 
 type Tab = 'overview' | 'diagnoses' | 'packages' | 'sessions' | 'payments';
 
@@ -40,8 +41,14 @@ export default function PatientDetail() {
 
   if (!patient) return <div className="text-ink-400">Loading…</div>;
 
-  const totalPaid = (patient.payments || []).reduce((s, p) => s + p.amount, 0);
-  const totalBilled = (patient.packages || []).reduce((s, p) => s + p.totalFee, 0);
+  const payments = patient.payments || [];
+  const totalPaid = payments.reduce((s, p) => s + (p.type === 'REFUND' ? -p.amount : p.amount), 0);
+  // Balance is owed on packages only — checkup and single-session fees are paid as they happen.
+  const packageValue = (patient.packages || []).reduce((s, p) => s + p.totalFee, 0);
+  const paidAgainstPackages = payments
+    .filter((p) => p.packageId)
+    .reduce((s, p) => s + p.amount, 0);
+  const balanceDue = Math.max(packageValue - paidAgainstPackages, 0);
   const sessionsDone = (patient.visits || []).filter((v) => v.attendance === 'PRESENT').length;
   const sessionsPending = (patient.visits || []).filter((v) => v.attendance === 'SCHEDULED').length;
 
@@ -69,9 +76,9 @@ export default function PatientDetail() {
         </div>
         <div className="grid gap-px bg-ink-100 sm:grid-cols-4">
           {[
-            ['Total Billed', currency(totalBilled)],
+            ['Package Value', currency(packageValue)],
             ['Total Paid', currency(totalPaid)],
-            ['Balance Due', currency(Math.max(totalBilled - totalPaid, 0))],
+            ['Balance Due', currency(balanceDue)],
             ['Sessions', `${sessionsDone} done · ${sessionsPending} pending`],
           ].map(([label, value]) => (
             <div key={label} className="bg-white px-5 py-4">
@@ -83,6 +90,8 @@ export default function PatientDetail() {
           ))}
         </div>
       </Card>
+
+      <CheckupFeeBanner patient={patient} reload={load} />
 
       <div className="mb-5 flex flex-wrap gap-1 border-b border-ink-200">
         {tabs.map((t) => (
@@ -105,6 +114,49 @@ export default function PatientDetail() {
       {tab === 'packages' && <Packages patient={patient} reload={load} />}
       {tab === 'sessions' && <Sessions patient={patient} reload={load} />}
       {tab === 'payments' && <Payments patient={patient} reload={load} />}
+    </div>
+  );
+}
+
+/**
+ * First-visit checkup fee is a separate charge from session/package fees, so it gets a
+ * one-click prompt that disappears once the fee has been recorded for this patient.
+ */
+function CheckupFeeBanner({ patient, reload }: { patient: Patient; reload: () => void }) {
+  const { settings } = useSettings();
+  const [busy, setBusy] = useState(false);
+  const alreadyPaid = (patient.payments || []).some((p) => p.type === 'CHECKUP_FEE');
+
+  if (alreadyPaid) return null;
+
+  async function record() {
+    setBusy(true);
+    try {
+      await api.post('/payments', {
+        patientId: patient.id,
+        amount: settings.checkupFee,
+        type: 'CHECKUP_FEE',
+        method: 'CASH',
+        notes: 'First visit checkup fee',
+      });
+      reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 px-5 py-4">
+      <div>
+        <div className="font-semibold text-teal-900">Checkup fee not recorded</div>
+        <div className="text-sm text-teal-700">
+          Charge the first-visit checkup fee of {currency(settings.checkupFee)} before starting a
+          treatment package.
+        </div>
+      </div>
+      <button className="btn-primary !bg-teal-600 hover:!bg-teal-700" onClick={record} disabled={busy}>
+        {busy ? 'Recording…' : `Record ${currency(settings.checkupFee)}`}
+      </button>
     </div>
   );
 }
@@ -344,6 +396,7 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
 }
 
 function Packages({ patient, reload }: { patient: Patient; reload: () => void }) {
+  const { settings } = useSettings();
   const [open, setOpen] = useState(false);
   const [instFor, setInstFor] = useState<TreatmentPackage | null>(null);
   const [carryFor, setCarryFor] = useState<TreatmentPackage | null>(null);
@@ -351,30 +404,29 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
     title: '',
     diagnosisId: '',
     totalSessions: 10,
-    feePerSession: 500,
+    feePerSession: settings.defaultSessionFee,
     startDate: toInputDate(new Date()),
     notes: '',
     generateSchedule: true,
     scheduleFrequencyDays: 2,
-    installmentCount: 0,
+    advanceAmount: 0,
+    advanceMethod: 'CASH' as const,
+    installmentCount: 3,
   };
   const [form, setForm] = useState(emptyForm);
 
+  function openNew() {
+    setForm({ ...emptyForm, feePerSession: settings.defaultSessionFee });
+    setOpen(true);
+  }
+
+  const totalFee = form.totalSessions * form.feePerSession;
+  const balance = Math.max(totalFee - form.advanceAmount, 0);
+  const perInstallment =
+    form.installmentCount > 0 ? Math.floor(balance / form.installmentCount) : 0;
+
   async function save(e: FormEvent) {
     e.preventDefault();
-    const totalFee = form.totalSessions * form.feePerSession;
-    const installments =
-      form.installmentCount > 0
-        ? Array.from({ length: form.installmentCount }).map((_, i) => {
-            const due = new Date(form.startDate);
-            due.setMonth(due.getMonth() + i);
-            return {
-              amount: Math.round(totalFee / form.installmentCount),
-              dueDate: due.toISOString(),
-            };
-          })
-        : undefined;
-
     await api.post('/packages', {
       patientId: patient.id,
       title: form.title,
@@ -385,7 +437,9 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
       notes: form.notes,
       generateSchedule: form.generateSchedule,
       scheduleFrequencyDays: Number(form.scheduleFrequencyDays),
-      installments,
+      advanceAmount: Number(form.advanceAmount),
+      advanceMethod: form.advanceMethod,
+      installmentCount: Number(form.installmentCount),
     });
     setOpen(false);
     setForm(emptyForm);
@@ -406,7 +460,7 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
   return (
     <div>
       <div className="mb-4 flex justify-end">
-        <button className="btn-primary" onClick={() => setOpen(true)}>
+        <button className="btn-primary" onClick={openNew}>
           + New Treatment Package
         </button>
       </div>
@@ -586,7 +640,29 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
               onChange={(e) => setForm({ ...form, startDate: e.target.value })}
             />
           </Field>
-          <Field label="Split into installments">
+          <Field label="Advance paid now">
+            <input
+              className="input"
+              type="number"
+              min={0}
+              value={form.advanceAmount}
+              onChange={(e) => setForm({ ...form, advanceAmount: Number(e.target.value) })}
+            />
+          </Field>
+          <Field label="Advance paid by">
+            <select
+              className="input"
+              value={form.advanceMethod}
+              onChange={(e) => setForm({ ...form, advanceMethod: e.target.value as any })}
+            >
+              <option value="CASH">Cash</option>
+              <option value="CARD">Card</option>
+              <option value="UPI">Mobile wallet</option>
+              <option value="BANK_TRANSFER">Bank transfer</option>
+              <option value="OTHER">Other</option>
+            </select>
+          </Field>
+          <Field label="Remaining paid in how many installments?">
             <input
               className="input"
               type="number"
@@ -621,11 +697,30 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
               </div>
             )}
           </div>
-          <div className="rounded-lg bg-ink-50 px-4 py-3 text-sm sm:col-span-2">
-            Total package fee:{' '}
-            <span className="font-bold text-brand-700">
-              {currency(form.totalSessions * form.feePerSession)}
-            </span>
+          <div className="rounded-lg border border-brand-100 bg-ink-50 p-4 text-sm sm:col-span-2">
+            <div className="flex justify-between py-1">
+              <span className="text-ink-600">
+                Package total ({form.totalSessions} × {currency(form.feePerSession)})
+              </span>
+              <span className="font-bold text-brand-700">{currency(totalFee)}</span>
+            </div>
+            <div className="flex justify-between py-1">
+              <span className="text-ink-600">Advance paid now</span>
+              <span className="font-semibold text-emerald-600">
+                − {currency(form.advanceAmount)}
+              </span>
+            </div>
+            <div className="flex justify-between border-t border-ink-200 py-1 pt-2">
+              <span className="text-ink-600">Balance</span>
+              <span className="font-bold text-ink-900">{currency(balance)}</span>
+            </div>
+            {form.installmentCount > 0 && balance > 0 && (
+              <div className="mt-2 rounded bg-white px-3 py-2 text-xs text-ink-600">
+                {form.installmentCount} monthly installments of about{' '}
+                <span className="font-semibold text-ink-900">{currency(perInstallment)}</span>,
+                first one due a month after the start date.
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2 sm:col-span-2">
             <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>
@@ -1042,6 +1137,7 @@ function Payments({ patient, reload }: { patient: Patient; reload: () => void })
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value as any })}
             >
+              <option value="CHECKUP_FEE">Checkup fee</option>
               <option value="ADVANCE">Advance</option>
               <option value="SESSION_FEE">Session fee</option>
               <option value="INSTALLMENT">Installment</option>
@@ -1057,7 +1153,7 @@ function Payments({ patient, reload }: { patient: Patient; reload: () => void })
             >
               <option value="CASH">Cash</option>
               <option value="CARD">Card</option>
-              <option value="UPI">UPI</option>
+              <option value="UPI">Mobile wallet</option>
               <option value="BANK_TRANSFER">Bank transfer</option>
               <option value="OTHER">Other</option>
             </select>

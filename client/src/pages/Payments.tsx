@@ -54,6 +54,7 @@ export default function Payments() {
           <Field label="Type">
             <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
               <option value="">All types</option>
+              <option value="CHECKUP_FEE">Checkup fee</option>
               <option value="ADVANCE">Advance</option>
               <option value="SESSION_FEE">Session fee</option>
               <option value="INSTALLMENT">Installment</option>

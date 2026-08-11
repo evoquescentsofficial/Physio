@@ -85,6 +85,7 @@ const badgeStyles: Record<string, string> = {
   SCHEDULED: 'bg-brand-100 text-brand-700',
   CARRIED_FORWARD: 'bg-amber-100 text-amber-700',
   CANCELLED: 'bg-ink-200 text-ink-600',
+  CHECKUP_FEE: 'bg-teal-100 text-teal-700',
   ACTIVE: 'bg-brand-100 text-brand-700',
   COMPLETED: 'bg-emerald-100 text-emerald-700',
   PENDING: 'bg-amber-100 text-amber-700',
@@ -144,9 +145,9 @@ export function StatCard({
 }
 
 export function currency(n: number) {
-  return new Intl.NumberFormat('en-IN', {
+  return new Intl.NumberFormat('en-PK', {
     style: 'currency',
-    currency: 'INR',
+    currency: 'PKR',
     maximumFractionDigits: 0,
   }).format(n || 0);
 }

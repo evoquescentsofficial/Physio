@@ -7,3 +7,4 @@ server/prisma/dev.db
 server/prisma/dev.db-journal
 .DS_Store
 *.tsbuildinfo
+client/dist/

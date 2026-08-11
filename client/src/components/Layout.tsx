@@ -1,18 +1,25 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
+import Logo from './Logo';
+import { IS_DEMO } from '../api/client';
+import { resetDemoData } from '../api/demoAdapter';
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: '▦', end: true },
   { to: '/patients', label: 'Patients', icon: '☰' },
   { to: '/sessions', label: 'Sessions & Attendance', icon: '✓' },
-  { to: '/payments', label: 'Payments', icon: '₹' },
+  { to: '/payments', label: 'Payments', icon: '₨' },
   { to: '/expenses', label: 'Expenses', icon: '▤' },
   { to: '/reports', label: 'Reports & P/L', icon: '◔' },
+  { to: '/settings', label: 'Settings', icon: '⚙' },
 ];
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { settings } = useSettings();
+  const clinicName = settings.clinicName;
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
@@ -28,12 +35,12 @@ export default function Layout() {
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex h-16 items-center gap-3 border-b border-white/10 px-6">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 font-bold">
-            P
+        <div className="flex h-16 items-center gap-3 border-b border-white/10 px-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/95">
+            <Logo className="h-8 w-8" color="#1d45c9" />
           </div>
-          <div>
-            <div className="text-sm font-bold leading-tight">PhysioCare</div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold leading-tight">{clinicName}</div>
             <div className="text-[11px] text-brand-200">Patient Management</div>
           </div>
         </div>
@@ -88,6 +95,24 @@ export default function Layout() {
               year: 'numeric',
             })}
           </div>
+          {IS_DEMO && (
+            <div className="ml-auto flex items-center gap-3">
+              <span className="hidden rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 sm:inline">
+                DEMO — saved in this browser only
+              </span>
+              <button
+                className="btn-secondary !py-1 !text-xs"
+                onClick={() => {
+                  if (confirm('Reset the demo back to the original sample data?')) {
+                    resetDemoData();
+                    window.location.reload();
+                  }
+                }}
+              >
+                Reset demo
+              </button>
+            </div>
+          )}
         </header>
         <main className="p-6">
           <Outlet />

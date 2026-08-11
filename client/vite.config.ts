@@ -1,8 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { viteSingleFile } from 'vite-plugin-singlefile';
 
-export default defineConfig({
-  plugins: [react()],
+// `vite build --mode demo` produces a single self-contained HTML file that runs the
+// whole app against an in-browser data store (see src/api/demoAdapter.ts), for sharing
+// a clickable preview without deploying the API.
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), ...(mode === 'demo' ? [viteSingleFile()] : [])],
   server: {
     port: 5173,
     proxy: {
@@ -12,4 +16,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

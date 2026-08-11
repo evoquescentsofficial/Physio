@@ -90,7 +90,13 @@ export interface Visit {
   treatmentNotes?: string | null;
 }
 
-export type PaymentType = 'ADVANCE' | 'SESSION_FEE' | 'INSTALLMENT' | 'VISIT_FEE' | 'REFUND';
+export type PaymentType =
+  | 'CHECKUP_FEE'
+  | 'ADVANCE'
+  | 'SESSION_FEE'
+  | 'INSTALLMENT'
+  | 'VISIT_FEE'
+  | 'REFUND';
 export type PaymentMethod = 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | 'OTHER';
 
 export interface Payment {

@@ -12,7 +12,7 @@ const paymentSchema = z.object({
   packageId: z.string().optional().nullable(),
   visitId: z.string().optional().nullable(),
   amount: z.number().positive(),
-  type: z.enum(['ADVANCE', 'SESSION_FEE', 'INSTALLMENT', 'VISIT_FEE', 'REFUND']),
+  type: z.enum(['CHECKUP_FEE', 'ADVANCE', 'SESSION_FEE', 'INSTALLMENT', 'VISIT_FEE', 'REFUND']),
   method: z.enum(['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'OTHER']).default('CASH'),
   date: z.string().optional(),
   notes: z.string().optional().nullable(),

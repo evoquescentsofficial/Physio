@@ -1,12 +1,14 @@
 import { FormEvent, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import Logo from '../components/Logo';
+import { IS_DEMO } from '../api/client';
 
 export default function Login() {
   const { login, user } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('admin@physio.clinic');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState(IS_DEMO ? 'demo' : '');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -30,10 +32,10 @@ export default function Login() {
     <div className="flex min-h-screen">
       <div className="hidden flex-1 flex-col justify-between bg-gradient-to-br from-brand-700 via-brand-800 to-brand-950 p-12 text-white lg:flex">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-lg font-bold">
-            P
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white">
+            <Logo className="h-9 w-9" color="#1d45c9" />
           </div>
-          <span className="text-lg font-bold">PhysioCare</span>
+          <span className="text-lg font-bold">Physio Fitness Clinic</span>
         </div>
         <div>
           <h1 className="max-w-md text-4xl font-bold leading-tight">
@@ -44,13 +46,23 @@ export default function Login() {
             profit &amp; loss — all tracked automatically.
           </p>
         </div>
-        <div className="text-sm text-brand-300">© {new Date().getFullYear()} PhysioCare</div>
+        <div className="text-sm text-brand-300">
+          © {new Date().getFullYear()} Physio Fitness Clinic
+        </div>
       </div>
 
       <div className="flex flex-1 items-center justify-center bg-ink-50 p-8">
         <form onSubmit={handleSubmit} className="card w-full max-w-md p-8">
           <h2 className="text-2xl font-bold text-ink-900">Welcome back</h2>
           <p className="mt-1 text-sm text-ink-500">Sign in to manage your clinic.</p>
+
+          {IS_DEMO && (
+            <div className="mt-5 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+              <span className="font-semibold">Demo mode.</span> Just press Sign in — the login is
+              already filled. Sample patients and payments are loaded, and everything is saved only
+              in this browser.
+            </div>
+          )}
 
           {error && (
             <div className="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>

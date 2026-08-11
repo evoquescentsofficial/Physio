@@ -1,7 +1,9 @@
-# PhysioCare — Patient Management System
+# Physio Fitness Clinic — Patient Management System
 
 A patient management system for physiotherapy clinics: patients, diagnoses, multi-session
 treatment packages, attendance, advances, installments, expenses and profit &amp; loss reporting.
+
+Amounts are shown in Pakistani Rupees (Rs).
 
 ## Features
 
@@ -9,11 +11,16 @@ treatment packages, attendance, advances, installments, expenses and profit &amp
 - Add / edit / delete patients with full contact and medical details (phone, email, DOB, gender,
   blood group, occupation, referred by, emergency contact, address, notes)
 - Live search by name, phone or email
-- Per-patient dashboard: total billed, total paid, balance due, session progress
+- Per-patient summary: package value, total paid, balance due, session progress
 
 **Diagnoses & treatment**
 - Multiple diagnoses per patient with clinical details, treatment plan, remarks and attending doctor
 - Diagnoses can be linked to treatment packages
+
+**Two kinds of fee**
+- **Checkup fee** — charged once on the patient's first visit. The patient page shows a prompt
+  until it has been recorded, and one click records it at the clinic's default rate.
+- **Session fee** — charged per session, either as a single paid session or inside a package.
 
 **Treatment packages & sessions**
 - Define a package: number of sessions × fee per session (total auto-calculated)
@@ -30,13 +37,16 @@ treatment packages, attendance, advances, installments, expenses and profit &amp
 
 **Payments**
 - Record advances, session fees, visit fees, installment payments and refunds
-- Payment methods: cash, card, UPI, bank transfer, other
+- Payment methods: cash, card, mobile wallet, bank transfer, other
 - Payments can be tied to a package or a specific visit (marks the visit fee as collected)
 - Outstanding dues list, ranked by amount owed
 
 **Installments**
-- Split a package total into N monthly installments at creation time, or add them individually
-- Due dates, paid dates, and automatic overdue highlighting
+- The usual flow: patient pays an **advance** at the start, and the remaining balance is split
+  into 2, 3 or more **monthly installments** — enter the advance and the number of installments
+  when creating the package and both are generated automatically
+- Rounding goes into the last installment, so the parts always add up to the balance exactly
+- Add installments individually too; due dates, paid dates and automatic overdue highlighting
 
 **Expenses**
 - Salaries, rent, utilities, equipment, marketing, maintenance and other categories
@@ -47,6 +57,10 @@ treatment packages, attendance, advances, installments, expenses and profit &amp
   today's schedule
 - Revenue trend, revenue by payment type, revenue vs expenses, expenses by category
 - Profit &amp; loss statement by month with margins and totals, exportable as CSV
+
+**Settings**
+- Clinic name, phone and address (shown throughout the app)
+- Default checkup fee and default session fee, so staff type less
 
 **Access control**
 - JWT authentication with Admin / Doctor / Receptionist roles; admins can manage users
@@ -86,6 +100,24 @@ Open http://localhost:5173 and sign in with:
 Change this password (or create a new admin and delete this one) before using the system for real
 patient data.
 
+### On Windows
+
+1. Install [Node.js](https://nodejs.org) (LTS version) — accept all defaults.
+2. Open **PowerShell**, then move into the project folder, e.g. `cd C:\Users\You\Physio`.
+3. Run the same four commands above, but use this instead of the `cp` line:
+   `copy server\.env.example server\.env`
+4. Leave the window open while you use the app — closing it stops the server.
+
+## Trying it without installing anything
+
+`npm run build:demo --prefix client` produces `client/dist/index.html`: a single self-contained
+file that runs the entire app in the browser against sample clinic data held in `localStorage`.
+No server, no database, no install — open the file (or host it anywhere) and press Sign in.
+
+Use it to explore the workflow or to show someone the system. Anything entered there is saved
+only in that browser and never reaches a real database; **Reset demo** in the top bar restores
+the original sample data.
+
 ## Project structure
 
 ```
@@ -95,9 +127,11 @@ server/
   src/routes/               auth, patients, diagnoses, packages, visits, payments, expenses, reports
   src/middleware/           JWT auth, role guards, error handling
 client/
-  src/pages/                Login, Dashboard, Patients, PatientDetail, Sessions, Payments, Expenses, Reports
+  src/pages/                Login, Dashboard, Patients, PatientDetail, Sessions,
+                            Payments, Expenses, Reports, Settings
   src/components/           Layout (sidebar nav) and shared UI primitives
-  src/context/              auth state
+  src/context/              auth state and clinic settings
+  src/api/                  API client, plus the in-browser store used by the demo build
 ```
 
 ## API overview
@@ -120,11 +154,17 @@ All routes except `POST /api/auth/login` require an `Authorization: Bearer <toke
 | GET    | `/api/reports/dashboard`            | Dashboard summary                           |
 | GET    | `/api/reports/profit-loss?months=6` | Monthly P&amp;L with totals                 |
 | GET    | `/api/reports/outstanding`          | Packages with an unpaid balance             |
+| GET    | `/api/settings`                     | Clinic name and default fees                |
+| PUT    | `/api/settings`                     | Update clinic details and default fees      |
 
 ## Notes on data
 
-Currency is formatted as INR (`en-IN`). To change it, edit the `currency()` helper in
-`client/src/components/ui.tsx`.
+Currency is formatted as PKR (`en-PK`), rendering as `Rs 1,500`. To change it, edit the
+`currency()` helper in `client/src/components/ui.tsx`.
+
+The clinic logo is inline SVG in `client/src/components/Logo.tsx`. To use an image file instead,
+put it at `client/public/logo.png` and replace that component's contents with
+`<img src="/logo.png" />`.
 
 SQLite has no native enum type, so status fields (attendance, payment type, expense category, …)
 are stored as strings and validated with Zod at the API boundary. The allowed values for each are

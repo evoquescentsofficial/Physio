@@ -21,6 +21,11 @@ const packageSchema = z.object({
   installments: z
     .array(z.object({ amount: z.number().min(0), dueDate: z.string() }))
     .optional(),
+  // Advance collected up front; the remaining balance is split across `installmentCount`
+  // monthly installments starting one month after the package start date.
+  advanceAmount: z.number().min(0).optional(),
+  advanceMethod: z.enum(['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'OTHER']).optional(),
+  installmentCount: z.number().int().min(0).optional(),
 });
 
 router.get(
@@ -65,6 +70,27 @@ router.post(
     const totalFee = data.totalSessions * data.feePerSession;
     const startDate = data.startDate ? new Date(data.startDate) : new Date();
 
+    const advanceAmount = data.advanceAmount ?? 0;
+    const installmentCount = data.installmentCount ?? 0;
+
+    // Explicit installments win; otherwise split the balance after the advance evenly,
+    // giving the last installment any rounding remainder so the parts sum to the balance.
+    let installmentPlan = data.installments?.map((i) => ({
+      amount: i.amount,
+      dueDate: new Date(i.dueDate),
+    }));
+
+    if (!installmentPlan && installmentCount > 0) {
+      const balance = Math.max(totalFee - advanceAmount, 0);
+      const per = Math.floor(balance / installmentCount);
+      installmentPlan = Array.from({ length: installmentCount }).map((_, idx) => {
+        const dueDate = new Date(startDate);
+        dueDate.setMonth(dueDate.getMonth() + idx + 1);
+        const amount = idx === installmentCount - 1 ? balance - per * (installmentCount - 1) : per;
+        return { amount, dueDate };
+      });
+    }
+
     const pkg = await prisma.treatmentPackage.create({
       data: {
         patientId: data.patientId,
@@ -75,17 +101,24 @@ router.post(
         totalFee,
         startDate,
         notes: data.notes || null,
-        installments: data.installments
-          ? {
-              create: data.installments.map((i) => ({
-                amount: i.amount,
-                dueDate: new Date(i.dueDate),
-              })),
-            }
-          : undefined,
+        installments: installmentPlan ? { create: installmentPlan } : undefined,
       },
       include: { installments: true },
     });
+
+    if (advanceAmount > 0) {
+      await prisma.payment.create({
+        data: {
+          patientId: data.patientId,
+          packageId: pkg.id,
+          amount: advanceAmount,
+          type: 'ADVANCE',
+          method: data.advanceMethod || 'CASH',
+          date: startDate,
+          notes: `Advance for ${data.title}`,
+        },
+      });
+    }
 
     if (data.generateSchedule) {
       const freq = data.scheduleFrequencyDays ?? 2;

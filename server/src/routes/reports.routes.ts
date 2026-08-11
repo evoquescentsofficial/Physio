@@ -91,7 +91,8 @@ router.get(
     });
 
     const byMonth: Record<string, Record<string, number>> = {};
-    for (const key of keys) byMonth[key] = { ADVANCE: 0, SESSION_FEE: 0, INSTALLMENT: 0, VISIT_FEE: 0 };
+    for (const key of keys)
+      byMonth[key] = { CHECKUP_FEE: 0, ADVANCE: 0, SESSION_FEE: 0, INSTALLMENT: 0, VISIT_FEE: 0 };
     for (const p of payments) {
       const key = monthKey(p.date);
       if (!byMonth[key]) continue;
