@@ -414,6 +414,7 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
   const [open, setOpen] = useState(false);
   const [instFor, setInstFor] = useState<TreatmentPackage | null>(null);
   const [carryFor, setCarryFor] = useState<TreatmentPackage | null>(null);
+  const [extendFor, setExtendFor] = useState<TreatmentPackage | null>(null);
   const emptyForm = {
     title: '',
     diagnosisId: '',
@@ -519,12 +520,15 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                       {currency(p.feePerSession)}
                     </div>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap gap-1">
                     {pending > 0 && (
                       <button className="btn-secondary !py-1" onClick={() => setCarryFor(p)}>
                         Carry forward ({pending})
                       </button>
                     )}
+                    <button className="btn-secondary !py-1" onClick={() => setExtendFor(p)}>
+                      + Add sessions
+                    </button>
                     <button className="btn-ghost !py-1" onClick={() => setInstFor(p)}>
                       + Installment
                     </button>
@@ -787,9 +791,159 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
         </form>
       </Modal>
 
+      <ExtendPackageModal pkg={extendFor} onClose={() => setExtendFor(null)} reload={reload} />
       <InstallmentModal pkg={instFor} onClose={() => setInstFor(null)} reload={reload} />
       <CarryForwardModal pkg={carryFor} onClose={() => setCarryFor(null)} reload={reload} />
     </div>
+  );
+}
+
+/**
+ * "The 10 sessions are finished and they need 10 more." Books the extra run and, unless the
+ * sessions are being given free, raises the package's session count and total fee to match.
+ */
+function ExtendPackageModal({
+  pkg,
+  onClose,
+  reload,
+}: {
+  pkg: TreatmentPackage | null;
+  onClose: () => void;
+  reload: () => void;
+}) {
+  const [extraSessions, setExtraSessions] = useState(10);
+  const [frequencyDays, setFrequencyDays] = useState(2);
+  const [chargeable, setChargeable] = useState(true);
+  const [startDate, setStartDate] = useState(toInputDate(new Date()));
+  const [feePerSession, setFeePerSession] = useState(0);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (pkg) {
+      setExtraSessions(10);
+      setFeePerSession(pkg.feePerSession);
+      setStartDate(toInputDate(new Date()));
+    }
+  }, [pkg]);
+
+  if (!pkg) return null;
+
+  const lastDate = new Date(startDate);
+  lastDate.setDate(lastDate.getDate() + (extraSessions - 1) * frequencyDays);
+  const extraFee = chargeable ? extraSessions * feePerSession : 0;
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api.post(`/packages/${pkg!.id}/extend`, {
+        extraSessions: Number(extraSessions),
+        feePerSession: Number(feePerSession),
+        startDate,
+        frequencyDays: Number(frequencyDays),
+        chargeable,
+      });
+      onClose();
+      reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Add more sessions to this package" wide>
+      <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-lg bg-ink-50 px-4 py-3 text-sm text-ink-600 sm:col-span-2">
+          <span className="font-semibold text-ink-900">{pkg.title}</span> — currently{' '}
+          {pkg.totalSessions} sessions at {currency(pkg.feePerSession)} each,{' '}
+          {currency(pkg.totalFee)} total.
+        </div>
+
+        <Field label="How many more sessions?">
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={60}
+            value={extraSessions}
+            onChange={(e) => setExtraSessions(Math.max(1, Number(e.target.value)))}
+            required
+          />
+        </Field>
+        <Field label="First new session on">
+          <input
+            className="input"
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            required
+          />
+        </Field>
+        <Field label="One session every (days)">
+          <input
+            className="input"
+            type="number"
+            min={1}
+            value={frequencyDays}
+            onChange={(e) => setFrequencyDays(Math.max(1, Number(e.target.value)))}
+          />
+        </Field>
+        <Field label="Fee per session">
+          <input
+            className="input"
+            type="number"
+            min={0}
+            value={feePerSession}
+            onChange={(e) => setFeePerSession(Number(e.target.value))}
+            disabled={!chargeable}
+          />
+        </Field>
+
+        <label className="flex items-center gap-2 rounded-lg bg-brand-50 px-4 py-3 text-sm font-medium text-ink-800 sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={chargeable}
+            onChange={(e) => setChargeable(e.target.checked)}
+          />
+          Charge for these sessions (adds them to the package total)
+        </label>
+
+        <div className="rounded-lg border border-brand-100 bg-ink-50 p-4 text-sm sm:col-span-2">
+          <div className="flex justify-between py-1">
+            <span className="text-ink-600">
+              {extraSessions} sessions, {formatDate(startDate)} to
+            </span>
+            <span className="font-semibold text-ink-900">{formatDate(lastDate.toISOString())}</span>
+          </div>
+          <div className="flex justify-between py-1">
+            <span className="text-ink-600">Added to package fee</span>
+            <span className="font-semibold text-brand-700">+ {currency(extraFee)}</span>
+          </div>
+          <div className="flex justify-between border-t border-ink-200 py-1 pt-2">
+            <span className="text-ink-600">Package becomes</span>
+            <span className="font-bold text-ink-900">
+              {pkg.totalSessions + (chargeable ? extraSessions : 0)} sessions ·{' '}
+              {currency(pkg.totalFee + extraFee)}
+            </span>
+          </div>
+          {!chargeable && (
+            <div className="mt-2 rounded bg-white px-3 py-2 text-xs text-ink-600">
+              Free sessions: they are scheduled and attendance is tracked, but nothing is added to
+              what the patient owes.
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 sm:col-span-2">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? 'Adding…' : `Add ${extraSessions} sessions`}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -962,6 +1116,18 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
     reload();
   }
 
+  async function removeVisit(visit: Visit) {
+    const label = visit.sessionNumber ? `session #${visit.sessionNumber}` : 'this visit';
+    if (!confirm(`Delete ${label} on ${formatDate(visit.scheduledDate)}? This cannot be undone.`))
+      return;
+    try {
+      await api.delete(`/visits/${visit.id}`);
+      reload();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Could not delete this session.');
+    }
+  }
+
   async function save(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -1052,6 +1218,20 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
                         onClick={() => mark(v, 'ABSENT')}
                       >
                         Absent
+                      </button>
+                      <button
+                        className="btn-ghost !px-2 !py-1 text-ink-400"
+                        title="Cancel this session (keeps the record)"
+                        onClick={() => mark(v, 'CANCELLED')}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn-ghost !px-2 !py-1 text-ink-400 hover:bg-red-50 hover:text-red-600"
+                        title="Delete this session permanently"
+                        onClick={() => removeVisit(v)}
+                      >
+                        ✕
                       </button>
                     </td>
                   </tr>

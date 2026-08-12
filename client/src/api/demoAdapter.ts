@@ -328,6 +328,46 @@ function handle(method: string, path: string, params: any, body: any): any {
         return null;
       }
     }
+    if (seg.length === 3 && seg[2] === 'extend' && method === 'post') {
+      const pkg = db.packages.find((k) => k.id === seg[1])!;
+      const fee = body.feePerSession ?? pkg.feePerSession;
+      const start = new Date(body.startDate);
+      const freq = Math.max(1, body.frequencyDays || 2);
+      const numbers = db.visits
+        .filter((v) => v.packageId === pkg.id)
+        .map((v) => v.sessionNumber || 0);
+      const firstNumber = (numbers.length ? Math.max(...numbers) : 0) + 1;
+
+      for (let i = 0; i < body.extraSessions; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i * freq);
+        db.visits.push({
+          id: newId('vis_'),
+          patientId: pkg.patientId,
+          packageId: pkg.id,
+          diagnosisId: pkg.diagnosisId,
+          sessionNumber: firstNumber + i,
+          scheduledDate: d.toISOString(),
+          completedDate: null,
+          type: 'SESSION',
+          fee,
+          feeCollected: false,
+          attendance: 'SCHEDULED',
+          carriedForward: false,
+          carriedFromId: null,
+          remarks: null,
+          treatmentNotes: null,
+        });
+      }
+      if (body.chargeable !== false) {
+        pkg.totalSessions += body.extraSessions;
+        pkg.totalFee += body.extraSessions * fee;
+      }
+      pkg.status = 'ACTIVE';
+      persist();
+      return { package: pkg, added: body.extraSessions };
+    }
+
     if (seg.length === 3 && seg[2] === 'installments' && method === 'post') {
       const inst = {
         id: newId('ins_'),
@@ -584,6 +624,13 @@ function handle(method: string, path: string, params: any, body: any): any {
       return v;
     }
     if (seg.length === 2 && method === 'delete') {
+      if (db.payments.some((y) => y.visitId === seg[1])) {
+        throw {
+          status: 409,
+          error:
+            'This session has a payment recorded against it. Cancel the session instead, or delete the payment first.',
+        };
+      }
       db.visits = db.visits.filter((x) => x.id !== seg[1]);
       persist();
       return null;

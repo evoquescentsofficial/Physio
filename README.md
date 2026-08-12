@@ -29,7 +29,11 @@ Amounts are shown in Pakistani Rupees (Rs).
 - Add a run of sessions in one go: choose how many and how many days apart, and the dates,
   session numbers and fees are filled in — numbering continues from the package's existing
   sessions, and the form warns if the run takes the package past the sessions paid for
+- Extend a finished package: book N more sessions and, when they are chargeable, the
+  package's session count and total fee rise to match so the extra work is billed
 - Per-session fee and per-session treatment notes
+- Cancel a session (keeps the record) or delete it outright; deletion is refused when a
+  payment is attached to it, so the money trail cannot be orphaned
 
 **Attendance & carry-forward**
 - Mark each scheduled session Present / Absent / Cancelled on the day it was scheduled
@@ -56,8 +60,8 @@ Amounts are shown in Pakistani Rupees (Rs).
 - Filter by date range and category, with per-category totals
 
 **Reports**
-- Dashboard: revenue / expenses / profit this month, outstanding dues, overdue pending sessions,
-  today's schedule
+- Dashboard: today's schedule with live attendance, revenue / expenses / profit this month,
+  outstanding dues and credits held, patient and package counts, overdue sessions
 - Revenue trend, revenue by payment type, revenue vs expenses, expenses by category
 - Date range on every report: today, last 7 days, last 30 days (the default), last 3 or 12
   months, or a custom from/to range
@@ -152,6 +156,7 @@ All routes except `POST /api/auth/login` require an `Authorization: Bearer <toke
 | POST   | `/api/diagnoses`                    | Add a diagnosis                             |
 | POST   | `/api/packages`                     | Create a package (optionally auto-scheduling sessions and installments) |
 | POST   | `/api/packages/:id/installments`    | Add an installment                          |
+| POST   | `/api/packages/:id/extend`          | Book more sessions, optionally billing them |
 | POST   | `/api/visits/:id/attendance`        | Mark Present / Absent / Cancelled           |
 | POST   | `/api/visits/:id/carry-forward`     | Carry one session to a new date             |
 | POST   | `/api/visits/carry-forward-pending` | Carry all overdue pending sessions forward  |

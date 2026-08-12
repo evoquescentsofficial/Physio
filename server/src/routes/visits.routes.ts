@@ -201,9 +201,21 @@ router.post(
   })
 );
 
+/**
+ * Deleting a session removes it from history entirely, so it is refused when money is
+ * attached to it — that payment would be left pointing at nothing and the day's takings
+ * would no longer reconcile. Mark such a session CANCELLED instead, which keeps the record.
+ */
 router.delete(
   '/:id',
   asyncHandler(async (req, res) => {
+    const linkedPayments = await prisma.payment.count({ where: { visitId: req.params.id } });
+    if (linkedPayments > 0) {
+      return res.status(409).json({
+        error:
+          'This session has a payment recorded against it. Cancel the session instead, or delete the payment first.',
+      });
+    }
     await prisma.visit.delete({ where: { id: req.params.id } });
     res.status(204).end();
   })

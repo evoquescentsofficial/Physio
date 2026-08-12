@@ -178,6 +178,66 @@ router.delete(
   })
 );
 
+/**
+ * Extend a package that has run its course: books more sessions and, when they are chargeable,
+ * raises the package's session count and total fee so the extra work is actually billed.
+ */
+router.post(
+  '/:id/extend',
+  asyncHandler(async (req, res) => {
+    const data = z
+      .object({
+        extraSessions: z.number().int().min(1).max(60),
+        feePerSession: z.number().min(0).optional(),
+        startDate: z.string(),
+        frequencyDays: z.number().int().min(1).default(2),
+        chargeable: z.boolean().default(true),
+      })
+      .parse(req.body);
+
+    const pkg = await prisma.treatmentPackage.findUnique({ where: { id: req.params.id } });
+    if (!pkg) return res.status(404).json({ error: 'Package not found' });
+
+    const fee = data.feePerSession ?? pkg.feePerSession;
+    const startDate = new Date(data.startDate);
+
+    const last = await prisma.visit.findFirst({
+      where: { packageId: pkg.id },
+      orderBy: { sessionNumber: 'desc' },
+      select: { sessionNumber: true },
+    });
+    const firstNumber = (last?.sessionNumber ?? 0) + 1;
+
+    const visits = Array.from({ length: data.extraSessions }).map((_, i) => {
+      const scheduledDate = new Date(startDate);
+      scheduledDate.setDate(scheduledDate.getDate() + i * data.frequencyDays);
+      return {
+        patientId: pkg.patientId,
+        packageId: pkg.id,
+        diagnosisId: pkg.diagnosisId,
+        sessionNumber: firstNumber + i,
+        scheduledDate,
+        type: 'SESSION',
+        fee,
+      };
+    });
+    await prisma.visit.createMany({ data: visits });
+
+    const updated = await prisma.treatmentPackage.update({
+      where: { id: pkg.id },
+      data: data.chargeable
+        ? {
+            totalSessions: pkg.totalSessions + data.extraSessions,
+            totalFee: pkg.totalFee + data.extraSessions * fee,
+            status: 'ACTIVE',
+          }
+        : { status: 'ACTIVE' },
+    });
+
+    res.status(201).json({ package: updated, added: visits.length });
+  })
+);
+
 // Installments
 const installmentSchema = z.object({
   amount: z.number().min(0),
