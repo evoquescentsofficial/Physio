@@ -12,7 +12,7 @@ import {
   formatDate,
   toInputDate,
 } from '../components/ui';
-import { Diagnosis, Patient, Payment, TreatmentPackage, Visit } from '../types';
+import { Diagnosis, Doctor, Patient, Payment, TreatmentPackage, Visit } from '../types';
 import { useSettings } from '../context/SettingsContext';
 
 type Tab = 'overview' | 'diagnoses' | 'packages' | 'sessions' | 'payments';
@@ -1070,8 +1070,15 @@ function CarryForwardModal({
 function Sessions({ patient, reload }: { patient: Patient; reload: () => void }) {
   const { settings } = useSettings();
   const [open, setOpen] = useState(false);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+
+  useEffect(() => {
+    api.get('/doctors').then((r) => setDoctors(r.data));
+  }, []);
+
   const emptyForm = {
     packageId: '',
+    doctorId: '',
     scheduledDate: toInputDate(new Date()),
     type: 'SESSION' as const,
     fee: settings.defaultSessionFee,
@@ -1135,6 +1142,7 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
       await api.post('/visits', {
         patientId: patient.id,
         packageId: form.packageId || null,
+        doctorId: form.doctorId || null,
         scheduledDate: form.scheduledDate,
         type: form.type,
         fee: Number(form.fee),
@@ -1152,6 +1160,11 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
 
   async function saveNotes(visit: Visit, treatmentNotes: string) {
     await api.put(`/visits/${visit.id}`, { treatmentNotes });
+    reload();
+  }
+
+  async function assignDoctor(visit: Visit, doctorId: string) {
+    await api.put(`/visits/${visit.id}`, { doctorId: doctorId || null });
     reload();
   }
 
@@ -1173,6 +1186,7 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
                 <tr>
                   <th className="px-5 py-3 font-semibold">Date</th>
                   <th className="px-5 py-3 font-semibold">Session</th>
+                  <th className="px-5 py-3 font-semibold">Doctor</th>
                   <th className="px-5 py-3 font-semibold">Fee</th>
                   <th className="px-5 py-3 font-semibold">Attendance</th>
                   <th className="px-5 py-3 font-semibold">Treatment notes</th>
@@ -1185,6 +1199,20 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
                     <td className="px-5 py-3 text-ink-700">{formatDate(v.scheduledDate)}</td>
                     <td className="px-5 py-3 text-ink-700">
                       {v.sessionNumber ? `#${v.sessionNumber}` : v.type.replace(/_/g, ' ')}
+                    </td>
+                    <td className="px-5 py-3">
+                      <select
+                        className="input !w-auto !min-w-[9rem] !py-1 !text-xs"
+                        value={v.doctorId || ''}
+                        onChange={(e) => assignDoctor(v, e.target.value)}
+                      >
+                        <option value="">Unassigned</option>
+                        {doctors.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-5 py-3 text-ink-700">
                       {currency(v.fee)}
@@ -1254,6 +1282,21 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
               {patient.packages?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Assigned doctor" className="sm:col-span-2">
+            <select
+              className="input"
+              value={form.doctorId}
+              onChange={(e) => setForm({ ...form, doctorId: e.target.value })}
+            >
+              <option value="">Not assigned yet</option>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                  {d.specialization ? ` — ${d.specialization}` : ''}
                 </option>
               ))}
             </select>

@@ -60,7 +60,10 @@ router.get(
           },
         },
         payments: { orderBy: { date: 'desc' } },
-        visits: { orderBy: { scheduledDate: 'desc' } },
+        visits: {
+          orderBy: { scheduledDate: 'desc' },
+          include: { doctor: { select: { id: true, name: true } } },
+        },
       },
     });
     if (!patient) return res.status(404).json({ error: 'Patient not found' });

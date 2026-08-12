@@ -9,13 +9,16 @@ import type { AxiosAdapter, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { buildDemoDb } from './demoData';
 import { DemoDb } from './demoTypes';
 
-const STORAGE_KEY = 'physio-demo-db-v1';
+// Bump when the stored shape changes, so browsers holding an older demo database
+// rebuild it instead of crashing on fields that did not exist then.
+const STORAGE_KEY = 'physio-demo-db-v2';
 
 function load(): DemoDb {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
     try {
-      return JSON.parse(raw) as DemoDb;
+      const parsed = JSON.parse(raw) as DemoDb;
+      if (Array.isArray(parsed.patients) && Array.isArray(parsed.doctors)) return parsed;
     } catch {
       /* fall through and rebuild */
     }
@@ -139,6 +142,12 @@ function computeAccounts() {
   });
 }
 
+const doctorBrief = (doctorId: string | null) => {
+  if (!doctorId) return null;
+  const d = db.doctors.find((x) => x.id === doctorId);
+  return d ? { id: d.id, name: d.name } : null;
+};
+
 const patientBrief = (patientId: string) => {
   const p = db.patients.find((x) => x.id === patientId);
   return p ? { name: p.name, phone: p.phone } : undefined;
@@ -166,6 +175,82 @@ function handle(method: string, path: string, params: any, body: any): any {
       persist();
     }
     return db.settings;
+  }
+
+  // ---- doctors ----
+  if (seg[0] === 'doctors') {
+    const withStats = (d: any) => {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      return {
+        ...d,
+        sessionsThisMonth: db.visits.filter(
+          (v) => v.doctorId === d.id && new Date(v.scheduledDate) >= startOfMonth
+        ).length,
+        sessionsCompleted: db.visits.filter(
+          (v) => v.doctorId === d.id && v.attendance === 'PRESENT'
+        ).length,
+      };
+    };
+
+    if (seg.length === 1 && method === 'get') {
+      const includeInactive = String(params?.includeInactive) === 'true';
+      return db.doctors
+        .filter((d) => includeInactive || d.active)
+        .slice()
+        .sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name))
+        .map(withStats);
+    }
+    if (seg.length === 1 && method === 'post') {
+      const doctor = {
+        id: newId('doc_'),
+        name: body.name,
+        specialization: body.specialization || null,
+        qualification: body.qualification || null,
+        phone: body.phone || null,
+        email: body.email || null,
+        consultationFee: body.consultationFee ?? null,
+        joinedDate: body.joinedDate ? new Date(body.joinedDate).toISOString() : null,
+        active: body.active ?? true,
+        notes: body.notes || null,
+      };
+      db.doctors.push(doctor);
+      persist();
+      return doctor;
+    }
+    if (seg.length === 2 && method === 'get') {
+      const d = db.doctors.find((x) => x.id === seg[1]);
+      if (!d) throw { status: 404, error: 'Doctor not found' };
+      return {
+        ...withStats(d),
+        visits: db.visits
+          .filter((v) => v.doctorId === d.id)
+          .sort((a, b) => b.scheduledDate.localeCompare(a.scheduledDate))
+          .slice(0, 50)
+          .map((v) => ({ ...v, patient: patientBrief(v.patientId) })),
+      };
+    }
+    if (seg.length === 2 && method === 'put') {
+      const d = db.doctors.find((x) => x.id === seg[1])!;
+      Object.assign(d, body, {
+        joinedDate: body.joinedDate ? new Date(body.joinedDate).toISOString() : d.joinedDate,
+      });
+      persist();
+      return d;
+    }
+    if (seg.length === 2 && method === 'delete') {
+      // Keep doctors who have treated patients, so past sessions still show who did the work.
+      if (db.visits.some((v) => v.doctorId === seg[1])) {
+        const d = db.doctors.find((x) => x.id === seg[1])!;
+        d.active = false;
+        persist();
+        return { deactivated: true, doctor: d };
+      }
+      db.doctors = db.doctors.filter((x) => x.id !== seg[1]);
+      persist();
+      return null;
+    }
   }
 
   // ---- patients ----
@@ -239,7 +324,8 @@ function handle(method: string, path: string, params: any, body: any): any {
           .sort((a, b) => b.date.localeCompare(a.date)),
         visits: db.visits
           .filter((v) => v.patientId === patientId)
-          .sort((a, b) => b.scheduledDate.localeCompare(a.scheduledDate)),
+          .sort((a, b) => b.scheduledDate.localeCompare(a.scheduledDate))
+          .map((v) => ({ ...v, doctor: doctorBrief(v.doctorId) })),
       };
     }
     if (seg.length === 2 && method === 'put') {
@@ -346,6 +432,7 @@ function handle(method: string, path: string, params: any, body: any): any {
           patientId: pkg.patientId,
           packageId: pkg.id,
           diagnosisId: pkg.diagnosisId,
+          doctorId: null,
           sessionNumber: firstNumber + i,
           scheduledDate: d.toISOString(),
           completedDate: null,
@@ -467,6 +554,7 @@ function handle(method: string, path: string, params: any, body: any): any {
             patientId: body.patientId,
             packageId: pkg.id,
             diagnosisId: body.diagnosisId || null,
+            doctorId: body.doctorId || null,
             sessionNumber: s + 1,
             scheduledDate: d.toISOString(),
             completedDate: null,
@@ -510,12 +598,14 @@ function handle(method: string, path: string, params: any, body: any): any {
           (v) =>
             (!params?.patientId || v.patientId === params.patientId) &&
             (!params?.attendance || v.attendance === params.attendance) &&
+            (!params?.doctorId || v.doctorId === params.doctorId) &&
             inRange(v.scheduledDate, params?.from, params?.to)
         )
         .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate))
         .map((v) => ({
           ...v,
           patient: patientBrief(v.patientId),
+          doctor: doctorBrief(v.doctorId),
           package: v.packageId
             ? { title: db.packages.find((k) => k.id === v.packageId)?.title || '' }
             : null,
@@ -543,6 +633,7 @@ function handle(method: string, path: string, params: any, body: any): any {
           patientId: body.patientId,
           packageId: body.packageId || null,
           diagnosisId: body.diagnosisId || null,
+          doctorId: body.doctorId || null,
           sessionNumber: nextNumber == null ? null : nextNumber + i,
           scheduledDate: d.toISOString(),
           completedDate: null,
@@ -749,7 +840,11 @@ function handle(method: string, path: string, params: any, body: any): any {
         activePackages: db.packages.filter((k) => k.status === 'ACTIVE').length,
         todaysVisits: db.visits
           .filter((v) => new Date(v.scheduledDate) >= sod && new Date(v.scheduledDate) <= eod)
-          .map((v) => ({ ...v, patient: patientBrief(v.patientId) })),
+          .map((v) => ({
+            ...v,
+            patient: patientBrief(v.patientId),
+            doctor: doctorBrief(v.doctorId),
+          })),
         overduePendingSessions: db.visits.filter(
           (v) => v.attendance === 'SCHEDULED' && new Date(v.scheduledDate) < sod
         ).length,

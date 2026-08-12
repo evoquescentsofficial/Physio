@@ -17,6 +17,15 @@ Amounts are shown in Pakistani Rupees (Rs).
 - Multiple diagnoses per patient with clinical details, treatment plan, remarks and attending doctor
 - Diagnoses can be linked to treatment packages
 
+**Doctors**
+- Add the physiotherapists working at the clinic with specialization, qualification, phone,
+  email, joining date and notes
+- Consultation fee is optional — leave it blank when the clinic bills per package rather
+  than per doctor
+- Each card shows that doctor's sessions this month and completed sessions all time
+- A doctor who has treated patients is marked as having left rather than deleted, so past
+  sessions keep their name; they can be reactivated at any time
+
 **Two kinds of fee**
 - **Checkup fee** — charged once on the patient's first visit. The patient page shows a prompt
   until it has been recorded, and one click records it at the clinic's default rate.
@@ -31,6 +40,9 @@ Amounts are shown in Pakistani Rupees (Rs).
   sessions, and the form warns if the run takes the package past the sessions paid for
 - Extend a finished package: book N more sessions and, when they are chargeable, the
   package's session count and total fee rise to match so the extra work is billed
+- Assign a doctor when booking sessions, and reassign any session later from a dropdown in
+  either the patient's session list or the clinic-wide sessions page
+- Filter the clinic-wide session list by doctor to see one therapist's workload
 - Per-session fee and per-session treatment notes
 - Cancel a session (keeps the record) or delete it outright; deletion is refused when a
   payment is attached to it, so the money trail cannot be orphaned
@@ -134,10 +146,11 @@ the original sample data.
 server/
   prisma/schema.prisma      data model
   prisma/seed.ts            seeds the initial admin user
-  src/routes/               auth, patients, diagnoses, packages, visits, payments, expenses, reports
+  src/routes/               auth, patients, doctors, diagnoses, packages, visits, payments,
+                            expenses, reports, settings
   src/middleware/           JWT auth, role guards, error handling
 client/
-  src/pages/                Login, Dashboard, Patients, PatientDetail, Sessions,
+  src/pages/                Login, Dashboard, Patients, PatientDetail, Sessions, Doctors,
                             Payments, Expenses, Reports, Settings
   src/components/           Layout (sidebar nav) and shared UI primitives
   src/context/              auth state and clinic settings
@@ -152,6 +165,9 @@ All routes except `POST /api/auth/login` require an `Authorization: Bearer <toke
 | ------ | ----------------------------------- | ------------------------------------------- |
 | POST   | `/api/auth/login`                   | Sign in                                     |
 | GET    | `/api/patients?q=`                  | List / search patients                      |
+| GET    | `/api/doctors`                      | List doctors with session counts            |
+| POST   | `/api/doctors`                      | Add a doctor                                |
+| DELETE | `/api/doctors/:id`                  | Remove, or deactivate if they have sessions |
 | GET    | `/api/patients/:id`                 | Full patient record with all relations      |
 | POST   | `/api/diagnoses`                    | Add a diagnosis                             |
 | POST   | `/api/packages`                     | Create a package (optionally auto-scheduling sessions and installments) |

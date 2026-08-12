@@ -10,6 +10,7 @@ const nav = [
   { to: '/', label: 'Dashboard', icon: '▦', end: true },
   { to: '/patients', label: 'Patients', icon: '☰' },
   { to: '/sessions', label: 'Sessions & Attendance', icon: '✓' },
+  { to: '/doctors', label: 'Doctors', icon: '✚' },
   { to: '/payments', label: 'Payments', icon: '₨' },
   { to: '/expenses', label: 'Expenses', icon: '▤' },
   { to: '/reports', label: 'Reports & P/L', icon: '◔' },

@@ -82,6 +82,7 @@ export function buildDemoDb(): DemoDb {
       defaultSessionFee: 1500,
     },
     patients: [],
+    doctors: [],
     diagnoses: [],
     packages: [],
     installments: [],
@@ -89,6 +90,26 @@ export function buildDemoDb(): DemoDb {
     payments: [],
     expenses: [],
   };
+
+  const doctorSeed: [string, string, string, number | null][] = [
+    ['Dr. Imran Shah', 'Orthopaedic physiotherapy', 'DPT, MSPT', 1500],
+    ['Dr. Sana Aslam', 'Sports injury rehabilitation', 'DPT', 1200],
+    ['Dr. Farhan Qureshi', 'Neurological physiotherapy', 'DPT, PhD', null],
+  ];
+  doctorSeed.forEach(([name, specialization, qualification, fee], i) => {
+    db.doctors.push({
+      id: id('doc_'),
+      name,
+      specialization,
+      qualification,
+      phone: `0300-11122${i}${i}`,
+      email: null,
+      consultationFee: fee,
+      joinedDate: monthsAgo(10 + i * 4, 1).toISOString(),
+      active: true,
+      notes: null,
+    });
+  });
 
   PEOPLE.forEach((person, idx) => {
     const [name, phone, gender, occupation] = person;
@@ -219,6 +240,7 @@ export function buildDemoDb(): DemoDb {
         patientId,
         packageId,
         diagnosisId,
+        doctorId: db.doctors[idx % db.doctors.length].id,
         sessionNumber: s + 1,
         scheduledDate: d.toISOString(),
         completedDate: attendance === 'PRESENT' ? d.toISOString() : null,
@@ -244,6 +266,7 @@ export function buildDemoDb(): DemoDb {
       patientId: p.id,
       packageId: null,
       diagnosisId: null,
+      doctorId: db.doctors[i % db.doctors.length].id,
       sessionNumber: null,
       scheduledDate: t.toISOString(),
       completedDate: null,

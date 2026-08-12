@@ -10,6 +10,7 @@ import paymentRoutes from './routes/payments.routes';
 import expenseRoutes from './routes/expenses.routes';
 import reportRoutes from './routes/reports.routes';
 import settingsRoutes from './routes/settings.routes';
+import doctorRoutes from './routes/doctors.routes';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -29,6 +30,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/doctors', doctorRoutes);
 
 app.use(errorHandler);
 

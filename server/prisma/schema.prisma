@@ -101,6 +101,8 @@ model Visit {
   package        TreatmentPackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
   diagnosisId    String?
   diagnosis      Diagnosis?        @relation(fields: [diagnosisId], references: [id])
+  doctorId       String?
+  doctor         Doctor?           @relation(fields: [doctorId], references: [id], onDelete: SetNull)
   sessionNumber  Int?
   scheduledDate  DateTime
   completedDate  DateTime?
@@ -133,6 +135,25 @@ model Payment {
   date      DateTime          @default(now())
   notes     String?
   createdAt DateTime          @default(now())
+}
+
+// Employee physiotherapists / consultants the clinic owner manages.
+// Consultation fee is optional: many clinics charge per package, not per doctor.
+model Doctor {
+  id              String    @id @default(cuid())
+  name            String
+  specialization  String?
+  qualification   String?
+  phone           String?
+  email           String?
+  consultationFee Float?
+  joinedDate      DateTime?
+  active          Boolean   @default(true)
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  visits Visit[]
 }
 
 // Single-row table (id is always "clinic") holding clinic-wide defaults.

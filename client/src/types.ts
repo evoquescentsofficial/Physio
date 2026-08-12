@@ -78,6 +78,8 @@ export interface Visit {
   packageId?: string | null;
   package?: { title: string } | null;
   diagnosisId?: string | null;
+  doctorId?: string | null;
+  doctor?: { id: string; name: string } | null;
   sessionNumber?: number | null;
   scheduledDate: string;
   completedDate?: string | null;
@@ -88,6 +90,22 @@ export interface Visit {
   carriedForward: boolean;
   remarks?: string | null;
   treatmentNotes?: string | null;
+}
+
+export interface Doctor {
+  id: string;
+  name: string;
+  specialization?: string | null;
+  qualification?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  consultationFee?: number | null;
+  joinedDate?: string | null;
+  active: boolean;
+  notes?: string | null;
+  sessionsThisMonth?: number;
+  sessionsCompleted?: number;
+  visits?: Visit[];
 }
 
 export type PaymentType =

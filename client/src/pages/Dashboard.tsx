@@ -361,6 +361,7 @@ export default function Dashboard() {
                         })}
                         {' · '}
                         {v.sessionNumber ? `Session ${v.sessionNumber}` : v.type.replace(/_/g, ' ')}
+                        {v.doctor ? ` · ${v.doctor.name}` : ''}
                       </div>
                     </div>
                     <span

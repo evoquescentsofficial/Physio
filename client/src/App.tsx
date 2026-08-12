@@ -10,6 +10,7 @@ import Payments from './pages/Payments';
 import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import Doctors from './pages/Doctors';
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="patients" element={<Patients />} />
         <Route path="patients/:id" element={<PatientDetail />} />
         <Route path="sessions" element={<Sessions />} />
+        <Route path="doctors" element={<Doctors />} />
         <Route path="payments" element={<Payments />} />
         <Route path="expenses" element={<Expenses />} />
         <Route path="reports" element={<Reports />} />

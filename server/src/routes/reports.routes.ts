@@ -132,7 +132,10 @@ router.get(
         prisma.treatmentPackage.count({ where: { status: 'ACTIVE' } }),
         prisma.visit.findMany({
           where: { scheduledDate: { gte: startOfDay, lte: endOfDay } },
-          include: { patient: { select: { name: true, phone: true } } },
+          include: {
+            patient: { select: { name: true, phone: true } },
+            doctor: { select: { id: true, name: true } },
+          },
           orderBy: { scheduledDate: 'asc' },
         }),
         prisma.payment.findMany({

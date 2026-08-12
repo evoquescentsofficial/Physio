@@ -12,7 +12,7 @@ import {
   formatDate,
   toInputDate,
 } from '../components/ui';
-import { Visit } from '../types';
+import { Doctor, Visit } from '../types';
 
 export default function Sessions() {
   const today = toInputDate(new Date());
@@ -20,14 +20,25 @@ export default function Sessions() {
   const [to, setTo] = useState(today);
   const [attendance, setAttendance] = useState('');
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [doctorId, setDoctorId] = useState('');
   const [carryVisit, setCarryVisit] = useState<Visit | null>(null);
 
   const load = useCallback(async () => {
     const res = await api.get('/visits', {
-      params: { from, to: to ? `${to}T23:59:59` : undefined, attendance: attendance || undefined },
+      params: {
+        from,
+        to: to ? `${to}T23:59:59` : undefined,
+        attendance: attendance || undefined,
+        doctorId: doctorId || undefined,
+      },
     });
     setVisits(res.data);
-  }, [from, to, attendance]);
+  }, [from, to, attendance, doctorId]);
+
+  useEffect(() => {
+    api.get('/doctors').then((r) => setDoctors(r.data));
+  }, []);
 
   useEffect(() => {
     load();
@@ -84,12 +95,22 @@ export default function Sessions() {
             </button>
           ))}
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="From">
             <input className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
           </Field>
           <Field label="To">
             <input className="input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </Field>
+          <Field label="Doctor">
+            <select className="input" value={doctorId} onChange={(e) => setDoctorId(e.target.value)}>
+              <option value="">All doctors</option>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Attendance">
             <select
@@ -132,6 +153,7 @@ export default function Sessions() {
                 <tr>
                   <th className="px-5 py-3 font-semibold">Date</th>
                   <th className="px-5 py-3 font-semibold">Patient</th>
+                  <th className="px-5 py-3 font-semibold">Doctor</th>
                   <th className="px-5 py-3 font-semibold">Package</th>
                   <th className="px-5 py-3 font-semibold">Session</th>
                   <th className="px-5 py-3 font-semibold">Fee</th>
@@ -151,6 +173,23 @@ export default function Sessions() {
                         {v.patient?.name}
                       </Link>
                       <div className="text-xs text-ink-400">{v.patient?.phone}</div>
+                    </td>
+                    <td className="px-5 py-3">
+                      <select
+                        className="input !w-auto !min-w-[8.5rem] !py-1 !text-xs"
+                        value={v.doctorId || ''}
+                        onChange={async (e) => {
+                          await api.put(`/visits/${v.id}`, { doctorId: e.target.value || null });
+                          load();
+                        }}
+                      >
+                        <option value="">Unassigned</option>
+                        {doctors.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-5 py-3 text-ink-600">{v.package?.title || '—'}</td>
                     <td className="px-5 py-3 text-ink-600">

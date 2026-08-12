@@ -11,6 +11,7 @@ const visitSchema = z.object({
   patientId: z.string().min(1),
   packageId: z.string().optional().nullable(),
   diagnosisId: z.string().optional().nullable(),
+  doctorId: z.string().optional().nullable(),
   sessionNumber: z.number().int().optional().nullable(),
   scheduledDate: z.string(),
   type: z.enum(['INITIAL_CONSULT', 'SESSION', 'FOLLOWUP']).default('SESSION'),
@@ -26,11 +27,12 @@ const visitSchema = z.object({
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const { patientId, from, to, attendance } = req.query as Record<string, string>;
+    const { patientId, from, to, attendance, doctorId } = req.query as Record<string, string>;
     const visits = await prisma.visit.findMany({
       where: {
         patientId: patientId || undefined,
         attendance: (attendance as any) || undefined,
+        doctorId: doctorId || undefined,
         scheduledDate:
           from || to
             ? {
@@ -40,7 +42,11 @@ router.get(
             : undefined,
       },
       orderBy: { scheduledDate: 'asc' },
-      include: { patient: { select: { name: true, phone: true } }, package: { select: { title: true } } },
+      include: {
+        patient: { select: { name: true, phone: true } },
+        package: { select: { title: true } },
+        doctor: { select: { id: true, name: true } },
+      },
     });
     res.json(visits);
   })
@@ -134,6 +140,7 @@ router.post(
           patientId: source.patientId,
           packageId: source.packageId,
           diagnosisId: source.diagnosisId,
+          doctorId: source.doctorId,
           sessionNumber: source.sessionNumber,
           scheduledDate: new Date(newDate),
           type: source.type,
@@ -186,6 +193,7 @@ router.post(
           patientId: source.patientId,
           packageId: source.packageId,
           diagnosisId: source.diagnosisId,
+          doctorId: source.doctorId,
           sessionNumber: source.sessionNumber,
           scheduledDate,
           type: source.type,

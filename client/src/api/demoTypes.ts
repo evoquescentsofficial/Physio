@@ -59,11 +59,25 @@ export interface DemoInstallment {
   notes: string | null;
 }
 
+export interface DemoDoctor {
+  id: string;
+  name: string;
+  specialization: string | null;
+  qualification: string | null;
+  phone: string | null;
+  email: string | null;
+  consultationFee: number | null;
+  joinedDate: string | null;
+  active: boolean;
+  notes: string | null;
+}
+
 export interface DemoVisit {
   id: string;
   patientId: string;
   packageId: string | null;
   diagnosisId: string | null;
+  doctorId: string | null;
   sessionNumber: number | null;
   scheduledDate: string;
   completedDate: string | null;
@@ -106,6 +120,7 @@ export interface DemoDb {
   packages: DemoPackage[];
   installments: DemoInstallment[];
   visits: DemoVisit[];
+  doctors: DemoDoctor[];
   payments: DemoPayment[];
   expenses: DemoExpense[];
 }
