@@ -26,6 +26,9 @@ Amounts are shown in Pakistani Rupees (Rs).
 - Define a package: number of sessions × fee per session (total auto-calculated)
 - Auto-generate the full session schedule at a chosen frequency (e.g. one session every 2 days)
 - Standalone visits (initial consultation, follow-up) alongside package sessions
+- Add a run of sessions in one go: choose how many and how many days apart, and the dates,
+  session numbers and fees are filled in — numbering continues from the package's existing
+  sessions, and the form warns if the run takes the package past the sessions paid for
 - Per-session fee and per-session treatment notes
 
 **Attendance & carry-forward**
@@ -56,7 +59,10 @@ Amounts are shown in Pakistani Rupees (Rs).
 - Dashboard: revenue / expenses / profit this month, outstanding dues, overdue pending sessions,
   today's schedule
 - Revenue trend, revenue by payment type, revenue vs expenses, expenses by category
-- Profit &amp; loss statement by month with margins and totals, exportable as CSV
+- Date range on every report: today, last 7 days, last 30 days (the default), last 3 or 12
+  months, or a custom from/to range
+- Figures are grouped by day, week or month automatically depending on how long the range is
+- Profit &amp; loss statement with margins and totals, exportable as CSV
 
 **Settings**
 - Clinic name, phone and address (shown throughout the app)
@@ -152,8 +158,9 @@ All routes except `POST /api/auth/login` require an `Authorization: Bearer <toke
 | POST   | `/api/payments`                     | Record an advance / fee / installment       |
 | GET    | `/api/expenses`                     | List expenses by range and category         |
 | GET    | `/api/reports/dashboard`            | Dashboard summary                           |
-| GET    | `/api/reports/profit-loss?months=6` | Monthly P&amp;L with totals                 |
-| GET    | `/api/reports/outstanding`          | Packages with an unpaid balance             |
+| GET    | `/api/reports/profit-loss?days=30`  | P&amp;L for a range (`days=N`, or `from`/`to`) |
+| GET    | `/api/reports/outstanding`          | Patients owing money                        |
+| GET    | `/api/reports/credits`              | Patients holding a credit balance           |
 | GET    | `/api/settings`                     | Clinic name and default fees                |
 | PUT    | `/api/settings`                     | Update clinic details and default fees      |
 

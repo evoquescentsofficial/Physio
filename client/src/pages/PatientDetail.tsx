@@ -914,15 +914,48 @@ function CarryForwardModal({
 }
 
 function Sessions({ patient, reload }: { patient: Patient; reload: () => void }) {
+  const { settings } = useSettings();
   const [open, setOpen] = useState(false);
   const emptyForm = {
     packageId: '',
     scheduledDate: toInputDate(new Date()),
     type: 'SESSION' as const,
-    fee: 0,
+    fee: settings.defaultSessionFee,
     remarks: '',
+    count: 1,
+    frequencyDays: 2,
   };
   const [form, setForm] = useState(emptyForm);
+  const [busy, setBusy] = useState(false);
+
+  const selectedPackage = patient.packages?.find((p) => p.id === form.packageId);
+  const alreadyScheduled = selectedPackage
+    ? (patient.visits || []).filter((v) => v.packageId === selectedPackage.id).length
+    : 0;
+  const overBy = selectedPackage
+    ? alreadyScheduled + form.count - selectedPackage.totalSessions
+    : 0;
+
+  const lastDate = (() => {
+    const d = new Date(form.scheduledDate);
+    d.setDate(d.getDate() + (form.count - 1) * form.frequencyDays);
+    return d;
+  })();
+
+  function openNew() {
+    setForm({ ...emptyForm, fee: settings.defaultSessionFee });
+    setOpen(true);
+  }
+
+  /** Picking a package adopts its per-session fee, since that is what the patient agreed to. */
+  function choosePackage(packageId: string) {
+    const pkg = patient.packages?.find((p) => p.id === packageId);
+    setForm((f) => ({
+      ...f,
+      packageId,
+      fee: pkg ? pkg.feePerSession : settings.defaultSessionFee,
+    }));
+  }
 
   async function mark(visit: Visit, status: string) {
     await api.post(`/visits/${visit.id}/attendance`, { status });
@@ -931,17 +964,24 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    await api.post('/visits', {
-      patientId: patient.id,
-      packageId: form.packageId || null,
-      scheduledDate: form.scheduledDate,
-      type: form.type,
-      fee: Number(form.fee),
-      remarks: form.remarks,
-    });
-    setOpen(false);
-    setForm(emptyForm);
-    reload();
+    setBusy(true);
+    try {
+      await api.post('/visits', {
+        patientId: patient.id,
+        packageId: form.packageId || null,
+        scheduledDate: form.scheduledDate,
+        type: form.type,
+        fee: Number(form.fee),
+        remarks: form.remarks,
+        count: Number(form.count),
+        frequencyDays: Number(form.frequencyDays),
+      });
+      setOpen(false);
+      setForm(emptyForm);
+      reload();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveNotes(visit: Visit, treatmentNotes: string) {
@@ -952,7 +992,7 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
   return (
     <div>
       <div className="mb-4 flex justify-end">
-        <button className="btn-primary" onClick={() => setOpen(true)}>
+        <button className="btn-primary" onClick={openNew}>
           + Add Session / Visit
         </button>
       </div>
@@ -1022,13 +1062,13 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
         )}
       </Card>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Add Session / Visit">
-        <form onSubmit={save} className="space-y-4">
-          <Field label="Package">
+      <Modal open={open} onClose={() => setOpen(false)} title="Add Session / Visit" wide>
+        <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
+          <Field label="Package" className="sm:col-span-2">
             <select
               className="input"
               value={form.packageId}
-              onChange={(e) => setForm({ ...form, packageId: e.target.value })}
+              onChange={(e) => choosePackage(e.target.value)}
             >
               <option value="">Standalone visit</option>
               {patient.packages?.map((p) => (
@@ -1038,7 +1078,18 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
               ))}
             </select>
           </Field>
-          <Field label="Date">
+          <Field label="How many sessions?">
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={60}
+              value={form.count}
+              onChange={(e) => setForm({ ...form, count: Math.max(1, Number(e.target.value)) })}
+              required
+            />
+          </Field>
+          <Field label={form.count > 1 ? 'First session on' : 'Date'}>
             <input
               className="input"
               type="date"
@@ -1047,6 +1098,19 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
               required
             />
           </Field>
+          {form.count > 1 && (
+            <Field label="One session every (days)" className="sm:col-span-2">
+              <input
+                className="input"
+                type="number"
+                min={1}
+                value={form.frequencyDays}
+                onChange={(e) =>
+                  setForm({ ...form, frequencyDays: Math.max(1, Number(e.target.value)) })
+                }
+              />
+            </Field>
+          )}
           <Field label="Type">
             <select
               className="input"
@@ -1058,7 +1122,7 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
               <option value="FOLLOWUP">Follow-up</option>
             </select>
           </Field>
-          <Field label="Fee">
+          <Field label="Fee per session">
             <input
               className="input"
               type="number"
@@ -1067,7 +1131,7 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
               onChange={(e) => setForm({ ...form, fee: Number(e.target.value) })}
             />
           </Field>
-          <Field label="Remarks">
+          <Field label="Remarks" className="sm:col-span-2">
             <textarea
               className="input"
               rows={2}
@@ -1075,12 +1139,40 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
               onChange={(e) => setForm({ ...form, remarks: e.target.value })}
             />
           </Field>
-          <div className="flex justify-end gap-2">
+
+          <div className="rounded-lg border border-brand-100 bg-ink-50 p-4 text-sm sm:col-span-2">
+            <div className="flex justify-between py-1">
+              <span className="text-ink-600">
+                {form.count === 1
+                  ? '1 session on'
+                  : `${form.count} sessions, ${formatDate(form.scheduledDate)} to`}
+              </span>
+              <span className="font-semibold text-ink-900">
+                {form.count === 1
+                  ? formatDate(form.scheduledDate)
+                  : formatDate(lastDate.toISOString())}
+              </span>
+            </div>
+            <div className="flex justify-between py-1">
+              <span className="text-ink-600">Total fee for these sessions</span>
+              <span className="font-bold text-brand-700">{currency(form.count * form.fee)}</span>
+            </div>
+            {selectedPackage && overBy > 0 && (
+              <div className="mt-2 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                This package is for {selectedPackage.totalSessions} sessions and{' '}
+                {alreadyScheduled} are already scheduled. Adding {form.count} more takes it{' '}
+                {overBy} over — fine if you are extending the treatment, but the extra sessions
+                are not covered by the package fee.
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 sm:col-span-2">
             <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary">
-              Add
+            <button type="submit" className="btn-primary" disabled={busy}>
+              {busy ? 'Adding…' : form.count === 1 ? 'Add session' : `Add ${form.count} sessions`}
             </button>
           </div>
         </form>

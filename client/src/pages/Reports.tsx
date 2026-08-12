@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -12,7 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '../api/client';
-import { Card, EmptyState, Field, PageHeader, currency } from '../components/ui';
+import { Card, EmptyState, Field, PageHeader, currency, formatDate, toInputDate } from '../components/ui';
 
 interface PLRow {
   month: string;
@@ -21,30 +21,52 @@ interface PLRow {
   profit: number;
 }
 
+/** Presets are expressed as "the last N days ending today"; 1 day means today only. */
+const PRESETS: { key: string; label: string; days: number }[] = [
+  { key: 'today', label: 'Today', days: 1 },
+  { key: '7', label: 'Last 7 days', days: 7 },
+  { key: '30', label: 'Last 30 days', days: 30 },
+  { key: '90', label: 'Last 3 months', days: 90 },
+  { key: '365', label: 'Last 12 months', days: 365 },
+];
+
 export default function Reports() {
-  const [months, setMonths] = useState(6);
+  const [preset, setPreset] = useState('30');
+  const [customFrom, setCustomFrom] = useState(toInputDate(new Date()));
+  const [customTo, setCustomTo] = useState(toInputDate(new Date()));
   const [rows, setRows] = useState<PLRow[]>([]);
   const [totals, setTotals] = useState({ revenue: 0, expenses: 0, profit: 0 });
   const [revenueBreakdown, setRevenueBreakdown] = useState<any[]>([]);
 
+  const query = useMemo(() => {
+    if (preset === 'custom') return `from=${customFrom}&to=${customTo}`;
+    const days = PRESETS.find((p) => p.key === preset)?.days ?? 30;
+    return `days=${days}`;
+  }, [preset, customFrom, customTo]);
+
+  const rangeLabel = useMemo(() => {
+    if (preset === 'custom') return `${formatDate(customFrom)} — ${formatDate(customTo)}`;
+    return PRESETS.find((p) => p.key === preset)?.label ?? '';
+  }, [preset, customFrom, customTo]);
+
   useEffect(() => {
-    api.get(`/reports/profit-loss?months=${months}`).then((r) => {
+    api.get(`/reports/profit-loss?${query}`).then((r) => {
       setRows(r.data.rows);
       setTotals(r.data.totals);
     });
-    api.get(`/reports/revenue?months=${months}`).then((r) => setRevenueBreakdown(r.data));
-  }, [months]);
+    api.get(`/reports/revenue?${query}`).then((r) => setRevenueBreakdown(r.data));
+  }, [query]);
 
   const margin = totals.revenue ? (totals.profit / totals.revenue) * 100 : 0;
 
   function exportCsv() {
-    const header = 'Month,Revenue,Expenses,Profit\n';
+    const header = 'Period,Revenue,Expenses,Profit\n';
     const body = rows.map((r) => `${r.month},${r.revenue},${r.expenses},${r.profit}`).join('\n');
     const blob = new Blob([header + body], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `profit-loss-${months}-months.csv`;
+    a.download = `profit-loss-${rangeLabel.replace(/[^\w]+/g, '-').toLowerCase()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -62,17 +84,50 @@ export default function Reports() {
       />
 
       <Card className="mb-4 p-4">
-        <Field label="Period" className="max-w-xs">
-          <select
-            className="input"
-            value={months}
-            onChange={(e) => setMonths(Number(e.target.value))}
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setPreset(p.key)}
+              className={preset === p.key ? 'btn-primary !py-1' : 'btn-secondary !py-1'}
+            >
+              {p.label}
+            </button>
+          ))}
+          <button
+            onClick={() => setPreset('custom')}
+            className={preset === 'custom' ? 'btn-primary !py-1' : 'btn-secondary !py-1'}
           >
-            <option value={3}>Last 3 months</option>
-            <option value={6}>Last 6 months</option>
-            <option value={12}>Last 12 months</option>
-          </select>
-        </Field>
+            Custom range
+          </button>
+        </div>
+
+        {preset === 'custom' && (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:max-w-xl">
+            <Field label="From">
+              <input
+                className="input"
+                type="date"
+                value={customFrom}
+                max={customTo}
+                onChange={(e) => setCustomFrom(e.target.value)}
+              />
+            </Field>
+            <Field label="To">
+              <input
+                className="input"
+                type="date"
+                value={customTo}
+                min={customFrom}
+                onChange={(e) => setCustomTo(e.target.value)}
+              />
+            </Field>
+          </div>
+        )}
+
+        <div className="mt-3 text-sm text-ink-500">
+          Showing <span className="font-semibold text-ink-800">{rangeLabel}</span>
+        </div>
       </Card>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-4">
@@ -134,7 +189,7 @@ export default function Reports() {
             <table className="w-full text-sm">
               <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
                 <tr>
-                  <th className="px-5 py-3 font-semibold">Month</th>
+                  <th className="px-5 py-3 font-semibold">Period</th>
                   <th className="px-5 py-3 text-right font-semibold">Revenue</th>
                   <th className="px-5 py-3 text-right font-semibold">Expenses</th>
                   <th className="px-5 py-3 text-right font-semibold">Profit / Loss</th>

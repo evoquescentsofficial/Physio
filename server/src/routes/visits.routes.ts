@@ -17,6 +17,10 @@ const visitSchema = z.object({
   fee: z.number().min(0).default(0),
   remarks: z.string().optional().nullable(),
   treatmentNotes: z.string().optional().nullable(),
+  // Book a run of sessions in one go: `count` visits spaced `frequencyDays` apart,
+  // starting at scheduledDate.
+  count: z.number().int().min(1).max(60).default(1),
+  frequencyDays: z.number().int().min(1).default(2),
 });
 
 router.get(
@@ -45,11 +49,32 @@ router.get(
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const data = visitSchema.parse(req.body);
-    const visit = await prisma.visit.create({
-      data: { ...data, scheduledDate: new Date(data.scheduledDate) },
+    const { count, frequencyDays, ...data } = visitSchema.parse(req.body);
+    const startDate = new Date(data.scheduledDate);
+
+    // Continue the package's existing numbering rather than restarting at 1.
+    let nextNumber = data.sessionNumber ?? null;
+    if (nextNumber == null && data.packageId) {
+      const last = await prisma.visit.findFirst({
+        where: { packageId: data.packageId },
+        orderBy: { sessionNumber: 'desc' },
+        select: { sessionNumber: true },
+      });
+      nextNumber = (last?.sessionNumber ?? 0) + 1;
+    }
+
+    const visits = Array.from({ length: count }).map((_, i) => {
+      const scheduledDate = new Date(startDate);
+      scheduledDate.setDate(scheduledDate.getDate() + i * frequencyDays);
+      return {
+        ...data,
+        scheduledDate,
+        sessionNumber: nextNumber == null ? null : nextNumber + i,
+      };
     });
-    res.status(201).json(visit);
+
+    await prisma.visit.createMany({ data: visits });
+    res.status(201).json({ count: visits.length, visits });
   })
 );
 

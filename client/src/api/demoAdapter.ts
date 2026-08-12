@@ -61,11 +61,56 @@ function monthLabel(key: string) {
   return new Date(y, m - 1, 1).toLocaleString('default', { month: 'short', year: '2-digit' });
 }
 
-function lastNMonthKeys(n: number) {
+/** Mirrors resolveRange/bucket* in the server's reports route. */
+function resolveRange(params: any) {
+  const to = params?.to ? new Date(params.to) : new Date();
+  to.setHours(23, 59, 59, 999);
+  let from: Date;
+  if (params?.from) {
+    from = new Date(params.from);
+  } else {
+    const days = Math.max(1, Number(params?.days) || 30);
+    from = new Date(to);
+    from.setDate(from.getDate() - (days - 1));
+  }
+  from.setHours(0, 0, 0, 0);
+  return { from, to };
+}
+
+type Bucket = 'day' | 'week' | 'month';
+
+function bucketFor(from: Date, to: Date): Bucket {
+  const days = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+  if (days <= 31) return 'day';
+  if (days <= 120) return 'week';
+  return 'month';
+}
+
+function bucketKey(d: Date, bucket: Bucket) {
+  if (bucket === 'month') return monthKey(d);
+  const day = new Date(d);
+  day.setHours(0, 0, 0, 0);
+  if (bucket === 'week') day.setDate(day.getDate() - day.getDay());
+  return day.toISOString().slice(0, 10);
+}
+
+function bucketLabel(key: string, bucket: Bucket) {
+  if (bucket === 'month') return monthLabel(key);
+  const label = new Date(key).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  return bucket === 'week' ? `w/c ${label}` : label;
+}
+
+function bucketKeys(from: Date, to: Date, bucket: Bucket) {
   const keys: string[] = [];
-  const now = new Date();
-  for (let i = n - 1; i >= 0; i--) {
-    keys.push(monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
+  const cursor = new Date(from);
+  cursor.setHours(0, 0, 0, 0);
+  if (bucket === 'week') cursor.setDate(cursor.getDate() - cursor.getDay());
+  if (bucket === 'month') cursor.setDate(1);
+  while (cursor <= to) {
+    keys.push(bucketKey(cursor, bucket));
+    if (bucket === 'day') cursor.setDate(cursor.getDate() + 1);
+    else if (bucket === 'week') cursor.setDate(cursor.getDate() + 7);
+    else cursor.setMonth(cursor.getMonth() + 1);
   }
   return keys;
 }
@@ -437,26 +482,44 @@ function handle(method: string, path: string, params: any, body: any): any {
         }));
     }
     if (seg.length === 1 && method === 'post') {
-      const v = {
-        id: newId('vis_'),
-        patientId: body.patientId,
-        packageId: body.packageId || null,
-        diagnosisId: body.diagnosisId || null,
-        sessionNumber: body.sessionNumber ?? null,
-        scheduledDate: new Date(body.scheduledDate).toISOString(),
-        completedDate: null,
-        type: body.type || 'SESSION',
-        fee: body.fee || 0,
-        feeCollected: false,
-        attendance: 'SCHEDULED',
-        carriedForward: false,
-        carriedFromId: null,
-        remarks: body.remarks || null,
-        treatmentNotes: body.treatmentNotes || null,
-      };
-      db.visits.push(v);
+      const count = Math.max(1, body.count || 1);
+      const frequencyDays = Math.max(1, body.frequencyDays || 2);
+      const start = new Date(body.scheduledDate);
+
+      // Continue the package's existing numbering rather than restarting at 1.
+      let nextNumber: number | null = body.sessionNumber ?? null;
+      if (nextNumber == null && body.packageId) {
+        const numbers = db.visits
+          .filter((v) => v.packageId === body.packageId)
+          .map((v) => v.sessionNumber || 0);
+        nextNumber = (numbers.length ? Math.max(...numbers) : 0) + 1;
+      }
+
+      const created = Array.from({ length: count }).map((_, i) => {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i * frequencyDays);
+        const v = {
+          id: newId('vis_'),
+          patientId: body.patientId,
+          packageId: body.packageId || null,
+          diagnosisId: body.diagnosisId || null,
+          sessionNumber: nextNumber == null ? null : nextNumber + i,
+          scheduledDate: d.toISOString(),
+          completedDate: null,
+          type: body.type || 'SESSION',
+          fee: body.fee || 0,
+          feeCollected: false,
+          attendance: 'SCHEDULED',
+          carriedForward: false,
+          carriedFromId: null,
+          remarks: body.remarks || null,
+          treatmentNotes: body.treatmentNotes || null,
+        };
+        db.visits.push(v);
+        return v;
+      });
       persist();
-      return v;
+      return { count: created.length, visits: created };
     }
     if (seg[1] === 'carry-forward-pending' && method === 'post') {
       const pending = db.visits
@@ -614,9 +677,6 @@ function handle(method: string, path: string, params: any, body: any): any {
 
   // ---- reports ----
   if (seg[0] === 'reports') {
-    const months = Number(params?.months) || 6;
-    const keys = lastNMonthKeys(months);
-
     if (seg[1] === 'dashboard') {
       const now = new Date();
       const som = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -655,55 +715,72 @@ function handle(method: string, path: string, params: any, body: any): any {
     }
 
     if (seg[1] === 'revenue') {
-      const byMonth: Record<string, Record<string, number>> = {};
-      for (const k of keys)
-        byMonth[k] = { CHECKUP_FEE: 0, ADVANCE: 0, SESSION_FEE: 0, INSTALLMENT: 0, VISIT_FEE: 0 };
+      const { from, to } = resolveRange(params);
+      const bucket = bucketFor(from, to);
+      const bKeys = bucketKeys(from, to, bucket);
+      const by: Record<string, Record<string, number>> = {};
+      for (const k of bKeys)
+        by[k] = { CHECKUP_FEE: 0, ADVANCE: 0, SESSION_FEE: 0, INSTALLMENT: 0, VISIT_FEE: 0 };
       for (const p of db.payments) {
         if (p.type === 'REFUND') continue;
-        const k = monthKey(new Date(p.date));
-        if (!byMonth[k] || byMonth[k][p.type] === undefined) continue;
-        byMonth[k][p.type] += p.amount;
+        const d = new Date(p.date);
+        if (d < from || d > to) continue;
+        const k = bucketKey(d, bucket);
+        if (!by[k] || by[k][p.type] === undefined) continue;
+        by[k][p.type] += p.amount;
       }
-      return keys.map((k) => ({
-        month: monthLabel(k),
-        total: Object.values(byMonth[k]).reduce((a, b) => a + b, 0),
-        ...byMonth[k],
+      return bKeys.map((k) => ({
+        month: bucketLabel(k, bucket),
+        total: Object.values(by[k]).reduce((a, b) => a + b, 0),
+        ...by[k],
       }));
     }
 
     if (seg[1] === 'expenses-summary') {
-      const byMonth: Record<string, number> = {};
-      for (const k of keys) byMonth[k] = 0;
+      const { from, to } = resolveRange(params);
+      const bucket = bucketFor(from, to);
+      const bKeys = bucketKeys(from, to, bucket);
+      const by: Record<string, number> = {};
+      for (const k of bKeys) by[k] = 0;
       const byCategory: Record<string, number> = {};
       for (const e of db.expenses) {
-        const k = monthKey(new Date(e.date));
-        if (byMonth[k] !== undefined) byMonth[k] += e.amount;
-        if (keys.includes(k)) byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
+        const d = new Date(e.date);
+        if (d < from || d > to) continue;
+        const k = bucketKey(d, bucket);
+        if (by[k] !== undefined) by[k] += e.amount;
+        byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
       }
       return {
-        series: keys.map((k) => ({ month: monthLabel(k), total: byMonth[k] })),
+        series: bKeys.map((k) => ({ month: bucketLabel(k, bucket), total: by[k] })),
         byCategory: Object.entries(byCategory).map(([category, total]) => ({ category, total })),
       };
     }
 
     if (seg[1] === 'profit-loss') {
+      const { from, to } = resolveRange(params);
+      const bucket = bucketFor(from, to);
+      const bKeys = bucketKeys(from, to, bucket);
       const rev: Record<string, number> = {};
       const exp: Record<string, number> = {};
-      for (const k of keys) {
+      for (const k of bKeys) {
         rev[k] = 0;
         exp[k] = 0;
       }
       for (const p of db.payments) {
         if (p.type === 'REFUND') continue;
-        const k = monthKey(new Date(p.date));
+        const d = new Date(p.date);
+        if (d < from || d > to) continue;
+        const k = bucketKey(d, bucket);
         if (rev[k] !== undefined) rev[k] += p.amount;
       }
       for (const e of db.expenses) {
-        const k = monthKey(new Date(e.date));
+        const d = new Date(e.date);
+        if (d < from || d > to) continue;
+        const k = bucketKey(d, bucket);
         if (exp[k] !== undefined) exp[k] += e.amount;
       }
-      const rows = keys.map((k) => ({
-        month: monthLabel(k),
+      const rows = bKeys.map((k) => ({
+        month: bucketLabel(k, bucket),
         revenue: rev[k],
         expenses: exp[k],
         profit: rev[k] - exp[k],

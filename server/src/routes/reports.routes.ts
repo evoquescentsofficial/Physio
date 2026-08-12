@@ -47,6 +47,67 @@ async function computeAccounts() {
   });
 }
 
+/**
+ * Resolves the reporting window. Callers may pass explicit from/to dates (a custom range)
+ * or a `days` count meaning "the last N days ending today"; `days=1` is today only.
+ * Falls back to the last 30 days.
+ */
+function resolveRange(query: any) {
+  const to = query.to ? new Date(query.to) : new Date();
+  to.setHours(23, 59, 59, 999);
+
+  let from: Date;
+  if (query.from) {
+    from = new Date(query.from);
+  } else {
+    const days = Math.max(1, Number(query.days) || 30);
+    from = new Date(to);
+    from.setDate(from.getDate() - (days - 1));
+  }
+  from.setHours(0, 0, 0, 0);
+  return { from, to };
+}
+
+/** Buckets a range by day, week or month depending on how long it is. */
+function bucketFor(from: Date, to: Date): 'day' | 'week' | 'month' {
+  const days = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+  if (days <= 31) return 'day';
+  if (days <= 120) return 'week';
+  return 'month';
+}
+
+function bucketKey(d: Date, bucket: 'day' | 'week' | 'month') {
+  if (bucket === 'month') return monthKey(d);
+  const day = new Date(d);
+  day.setHours(0, 0, 0, 0);
+  if (bucket === 'week') day.setDate(day.getDate() - day.getDay());
+  return day.toISOString().slice(0, 10);
+}
+
+function bucketLabel(key: string, bucket: 'day' | 'week' | 'month') {
+  if (bucket === 'month') return monthLabel(key);
+  const d = new Date(key);
+  const label = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  return bucket === 'week' ? `w/c ${label}` : label;
+}
+
+/** Every bucket start between from and to, so quiet days still appear on the chart. */
+function bucketKeys(from: Date, to: Date, bucket: 'day' | 'week' | 'month') {
+  const keys: string[] = [];
+  const cursor = new Date(from);
+  cursor.setHours(0, 0, 0, 0);
+  if (bucket === 'week') cursor.setDate(cursor.getDate() - cursor.getDay());
+  if (bucket === 'month') cursor.setDate(1);
+
+  while (cursor <= to) {
+    keys.push(bucketKey(cursor, bucket));
+    if (bucket === 'day') cursor.setDate(cursor.getDate() + 1);
+    else if (bucket === 'week') cursor.setDate(cursor.getDate() + 7);
+    else cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return keys;
+}
+
 function monthKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
@@ -54,16 +115,6 @@ function monthKey(d: Date) {
 function monthLabel(key: string) {
   const [y, m] = key.split('-').map(Number);
   return new Date(y, m - 1, 1).toLocaleString('default', { month: 'short', year: '2-digit' });
-}
-
-function lastNMonthKeys(n: number) {
-  const keys: string[] = [];
-  const now = new Date();
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    keys.push(monthKey(d));
-  }
-  return keys;
 }
 
 router.get(
@@ -117,62 +168,53 @@ router.get(
 router.get(
   '/revenue',
   asyncHandler(async (req, res) => {
-    const months = Number(req.query.months) || 6;
-    const keys = lastNMonthKeys(months);
-    const since = new Date();
-    since.setMonth(since.getMonth() - (months - 1));
-    since.setDate(1);
-    since.setHours(0, 0, 0, 0);
+    const { from, to } = resolveRange(req.query);
+    const bucket = bucketFor(from, to);
+    const keys = bucketKeys(from, to, bucket);
 
     const payments = await prisma.payment.findMany({
-      where: { date: { gte: since }, type: { not: 'REFUND' } },
+      where: { date: { gte: from, lte: to }, type: { not: 'REFUND' } },
     });
 
-    const byMonth: Record<string, Record<string, number>> = {};
+    const byBucket: Record<string, Record<string, number>> = {};
     for (const key of keys)
-      byMonth[key] = { CHECKUP_FEE: 0, ADVANCE: 0, SESSION_FEE: 0, INSTALLMENT: 0, VISIT_FEE: 0 };
+      byBucket[key] = { CHECKUP_FEE: 0, ADVANCE: 0, SESSION_FEE: 0, INSTALLMENT: 0, VISIT_FEE: 0 };
     for (const p of payments) {
-      const key = monthKey(p.date);
-      if (!byMonth[key]) continue;
-      byMonth[key][p.type] = (byMonth[key][p.type] || 0) + p.amount;
+      const key = bucketKey(p.date, bucket);
+      if (!byBucket[key]) continue;
+      byBucket[key][p.type] = (byBucket[key][p.type] || 0) + p.amount;
     }
 
-    const series = keys.map((key) => ({
-      month: monthLabel(key),
-      total: Object.values(byMonth[key]).reduce((a, b) => a + b, 0),
-      ...byMonth[key],
-    }));
-
-    res.json(series);
+    res.json(
+      keys.map((key) => ({
+        month: bucketLabel(key, bucket),
+        total: Object.values(byBucket[key]).reduce((a, b) => a + b, 0),
+        ...byBucket[key],
+      }))
+    );
   })
 );
 
 router.get(
   '/expenses-summary',
   asyncHandler(async (req, res) => {
-    const months = Number(req.query.months) || 6;
-    const keys = lastNMonthKeys(months);
-    const since = new Date();
-    since.setMonth(since.getMonth() - (months - 1));
-    since.setDate(1);
-    since.setHours(0, 0, 0, 0);
+    const { from, to } = resolveRange(req.query);
+    const bucket = bucketFor(from, to);
+    const keys = bucketKeys(from, to, bucket);
 
-    const expenses = await prisma.expense.findMany({ where: { date: { gte: since } } });
-    const byMonth: Record<string, number> = {};
-    for (const key of keys) byMonth[key] = 0;
-    for (const e of expenses) {
-      const key = monthKey(e.date);
-      if (byMonth[key] === undefined) continue;
-      byMonth[key] += e.amount;
-    }
+    const expenses = await prisma.expense.findMany({ where: { date: { gte: from, lte: to } } });
 
+    const byBucket: Record<string, number> = {};
+    for (const key of keys) byBucket[key] = 0;
     const byCategory: Record<string, number> = {};
     for (const e of expenses) {
+      const key = bucketKey(e.date, bucket);
+      if (byBucket[key] !== undefined) byBucket[key] += e.amount;
       byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
     }
 
     res.json({
-      series: keys.map((key) => ({ month: monthLabel(key), total: byMonth[key] })),
+      series: keys.map((key) => ({ month: bucketLabel(key, bucket), total: byBucket[key] })),
       byCategory: Object.entries(byCategory).map(([category, total]) => ({ category, total })),
     });
   })
@@ -181,38 +223,35 @@ router.get(
 router.get(
   '/profit-loss',
   asyncHandler(async (req, res) => {
-    const months = Number(req.query.months) || 6;
-    const keys = lastNMonthKeys(months);
-    const since = new Date();
-    since.setMonth(since.getMonth() - (months - 1));
-    since.setDate(1);
-    since.setHours(0, 0, 0, 0);
+    const { from, to } = resolveRange(req.query);
+    const bucket = bucketFor(from, to);
+    const keys = bucketKeys(from, to, bucket);
 
     const [payments, expenses] = await Promise.all([
-      prisma.payment.findMany({ where: { date: { gte: since }, type: { not: 'REFUND' } } }),
-      prisma.expense.findMany({ where: { date: { gte: since } } }),
+      prisma.payment.findMany({ where: { date: { gte: from, lte: to }, type: { not: 'REFUND' } } }),
+      prisma.expense.findMany({ where: { date: { gte: from, lte: to } } }),
     ]);
 
-    const revenueByMonth: Record<string, number> = {};
-    const expenseByMonth: Record<string, number> = {};
+    const revenueBy: Record<string, number> = {};
+    const expenseBy: Record<string, number> = {};
     for (const key of keys) {
-      revenueByMonth[key] = 0;
-      expenseByMonth[key] = 0;
+      revenueBy[key] = 0;
+      expenseBy[key] = 0;
     }
     for (const p of payments) {
-      const key = monthKey(p.date);
-      if (revenueByMonth[key] !== undefined) revenueByMonth[key] += p.amount;
+      const key = bucketKey(p.date, bucket);
+      if (revenueBy[key] !== undefined) revenueBy[key] += p.amount;
     }
     for (const e of expenses) {
-      const key = monthKey(e.date);
-      if (expenseByMonth[key] !== undefined) expenseByMonth[key] += e.amount;
+      const key = bucketKey(e.date, bucket);
+      if (expenseBy[key] !== undefined) expenseBy[key] += e.amount;
     }
 
     const rows = keys.map((key) => ({
-      month: monthLabel(key),
-      revenue: revenueByMonth[key],
-      expenses: expenseByMonth[key],
-      profit: revenueByMonth[key] - expenseByMonth[key],
+      month: bucketLabel(key, bucket),
+      revenue: revenueBy[key],
+      expenses: expenseBy[key],
+      profit: revenueBy[key] - expenseBy[key],
     }));
 
     const totals = rows.reduce(
@@ -224,7 +263,11 @@ router.get(
       { revenue: 0, expenses: 0, profit: 0 }
     );
 
-    res.json({ rows, totals });
+    res.json({
+      rows,
+      totals,
+      range: { from: from.toISOString(), to: to.toISOString(), bucket },
+    });
   })
 );
 
