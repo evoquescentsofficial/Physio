@@ -286,7 +286,7 @@ export function buildDemoDb(): DemoDb {
   for (let daysBack = 1; daysBack <= 180; daysBack++) {
     const day = atDay(daysBack);
     if (day.getDay() === 0) continue; // closed Sundays
-    const count = 2 + Math.floor(random() * 3); // 2–4 walk-ins
+    const count = 4 + Math.floor(random() * 3); // 4–6 walk-ins
     for (let i = 0; i < count; i++) {
       db.payments.push({
         id: id('pay_'),
@@ -302,22 +302,29 @@ export function buildDemoDb(): DemoDb {
     }
   }
 
-  // running costs for each of the last six months
-  const monthlyCosts: [string, string, number][] = [
-    ['RENT', 'Clinic rent', 45000],
-    ['SALARY', 'Therapist salary — Sana', 60000],
-    ['SALARY', 'Receptionist salary — Hina', 30000],
-    ['UTILITIES', 'Electricity, gas and internet', 18000],
-    ['MAINTENANCE', 'Cleaning and supplies', 9000],
+  // Running costs, dated to the day each one is actually paid. Booking a whole month of
+  // rent and salaries on the 2nd made every month look like a loss until the day's takings
+  // caught up — the clinic appeared to be failing for the first three weeks of every month.
+  const monthlyCosts: { category: string; title: string; amount: number; day: number }[] = [
+    { category: 'RENT', title: 'Clinic rent', amount: 45000, day: 1 },
+    { category: 'UTILITIES', title: 'Electricity, gas and internet', amount: 18000, day: 10 },
+    { category: 'MAINTENANCE', title: 'Cleaning and supplies', amount: 9000, day: 15 },
+    { category: 'SALARY', title: 'Therapist salary — Sana', amount: 60000, day: 28 },
+    { category: 'SALARY', title: 'Receptionist salary — Hina', amount: 30000, day: 28 },
   ];
+
+  const now = new Date();
   for (let m = 5; m >= 0; m--) {
-    for (const [category, title, amount] of monthlyCosts) {
+    for (const cost of monthlyCosts) {
+      const date = new Date(now.getFullYear(), now.getMonth() - m, cost.day, 10, 0, 0, 0);
+      // Salaries due at month end have not been paid yet, so they are not an expense yet.
+      if (date > now) continue;
       db.expenses.push({
         id: id('exp_'),
-        category,
-        title,
-        amount,
-        date: monthsAgo(m, 2).toISOString(),
+        category: cost.category,
+        title: cost.title,
+        amount: cost.amount,
+        date: date.toISOString(),
         paidTo: null,
         notes: null,
       });
