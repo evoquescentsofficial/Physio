@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
-import { requireAuth } from '../middleware/auth';
+import { ADMIN_ONLY, requireAuth } from '../middleware/auth';
 
 const router = Router();
 router.use(requireAuth);
@@ -32,6 +32,7 @@ const settingsSchema = z.object({
 
 router.put(
   '/',
+  ADMIN_ONLY,
   asyncHandler(async (req, res) => {
     const data = settingsSchema.parse(req.body);
     await getOrCreateSettings();

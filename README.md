@@ -85,7 +85,30 @@ Amounts are shown in Pakistani Rupees (Rs).
 - Default checkup fee and default session fee, so staff type less
 
 **Access control**
-- JWT authentication with Admin / Doctor / Receptionist roles; admins can manage users
+- JWT authentication with Admin / Doctor / Receptionist roles
+- Receptionists run the front desk — patients, bookings, attendance, taking payments — but
+  cannot delete patients or payments, see expenses and the P&L, change clinic fees, or
+  manage doctors and users
+- Sign-in is rate limited (10 attempts per 15 minutes), and `/auth/me` reads the database
+  rather than the token, so a role change or a closed account takes effect immediately
+- Password change endpoint; the last remaining admin cannot be deleted
+
+## How money is counted
+
+All three surfaces — API, web client and demo — import `shared/money.ts`, so there is one
+definition of every rule rather than one per codebase:
+
+- **Refunds are negative.** They reduce revenue, profit and the patient's paid total.
+- **Only packages create a debt.** Checkup and single-session fees are settled as they
+  happen; an advance or installment with no package named is money on account.
+- **Overpayment becomes credit** on the patient's account and is applied to their next package.
+- **Marking an installment paid records a Payment** in the same transaction, so the cash
+  reaches revenue and the balance. Reopening it removes that payment again.
+- **Installment rounding** goes on the last installment, so the parts sum to the balance exactly.
+- **OVERDUE is derived, never stored** — it is a fact about today, so a nightly job cannot
+  get it wrong between runs.
+
+`npm test --prefix server` runs the unit tests covering these rules.
 
 ## Tech stack
 
@@ -104,7 +127,8 @@ npm run install:all
 
 # 2. Configure the server
 cp server/.env.example server/.env
-# edit server/.env and set a strong JWT_SECRET
+# edit server/.env and set a strong JWT_SECRET (32+ characters).
+# In production the server refuses to start without one.
 
 # 3. Create the database and seed the admin user
 npm run db:migrate
@@ -164,6 +188,7 @@ All routes except `POST /api/auth/login` require an `Authorization: Bearer <toke
 | Method | Endpoint                            | Purpose                                     |
 | ------ | ----------------------------------- | ------------------------------------------- |
 | POST   | `/api/auth/login`                   | Sign in                                     |
+| POST   | `/api/auth/change-password`         | Change your own password                    |
 | GET    | `/api/patients?q=`                  | List / search patients                      |
 | GET    | `/api/doctors`                      | List doctors with session counts            |
 | POST   | `/api/doctors`                      | Add a doctor                                |
@@ -197,3 +222,18 @@ put it at `client/public/logo.png` and replace that component's contents with
 SQLite has no native enum type, so status fields (attendance, payment type, expense category, …)
 are stored as strings and validated with Zod at the API boundary. The allowed values for each are
 documented in comments in `server/prisma/schema.prisma`.
+
+## Known limitations
+
+Deliberate gaps, in the order they should be closed:
+
+- **Money is stored as `Float`.** Correct today because every amount is a whole rupee, but
+  it should be integer paisa (or Postgres `Decimal`) before the data grows.
+- **Dates are timezone-naive.** Appointment dates are stored as timestamps and compared
+  against server-local day boundaries. Correct in PKT; wrong on a negative UTC offset.
+  Needs date-only storage plus a clinic timezone setting.
+- **No pagination.** Every list endpoint returns the whole table.
+- **SQLite** is single-writer and single-machine — fine for one front desk, not for two.
+- **No audit trail.** Nothing records who took a payment or edited a record.
+- **Deletes are hard deletes.** Removing a patient removes their history with them.
+- **No appointment times.** Sessions have a date but no time, duration or double-booking check.

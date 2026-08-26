@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
-import { requireAuth } from '../middleware/auth';
+import { ADMIN_ONLY, requireAuth } from '../middleware/auth';
 
 const router = Router();
 router.use(requireAuth);
@@ -81,6 +81,7 @@ router.get(
 
 router.post(
   '/',
+  ADMIN_ONLY,
   asyncHandler(async (req, res) => {
     const data = doctorSchema.parse(req.body);
     const doctor = await prisma.doctor.create({
@@ -96,6 +97,7 @@ router.post(
 
 router.put(
   '/:id',
+  ADMIN_ONLY,
   asyncHandler(async (req, res) => {
     const data = doctorSchema.partial().parse(req.body);
     const doctor = await prisma.doctor.update({
@@ -116,6 +118,7 @@ router.put(
  */
 router.delete(
   '/:id',
+  ADMIN_ONLY,
   asyncHandler(async (req, res) => {
     const visits = await prisma.visit.count({ where: { doctorId: req.params.id } });
     if (visits > 0) {

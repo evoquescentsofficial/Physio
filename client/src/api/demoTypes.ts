@@ -57,6 +57,7 @@ export interface DemoInstallment {
   paidDate: string | null;
   status: string;
   notes: string | null;
+  paymentId: string | null;
 }
 
 export interface DemoDoctor {

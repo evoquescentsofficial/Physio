@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
-import { requireAuth } from '../middleware/auth';
+import { ADMIN_ONLY, requireAuth } from '../middleware/auth';
 
 const router = Router();
 router.use(requireAuth);
@@ -67,8 +67,10 @@ router.put(
   })
 );
 
+// Removing a payment rewrites the day's takings, so it is not a front-desk action.
 router.delete(
   '/:id',
+  ADMIN_ONLY,
   asyncHandler(async (req, res) => {
     await prisma.payment.delete({ where: { id: req.params.id } });
     res.status(204).end();

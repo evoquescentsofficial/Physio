@@ -2,9 +2,10 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "commonjs",
-    "lib": ["ES2020"],
+    "lib": [
+      "ES2020"
+    ],
     "outDir": "dist",
-    "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -12,5 +13,13 @@
     "resolveJsonModule": true,
     "moduleResolution": "node"
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "../shared"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "../shared/__tests__"
+  ]
 }

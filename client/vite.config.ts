@@ -9,6 +9,8 @@ export default defineConfig(({ mode }) => ({
   plugins: [react(), ...(mode === 'demo' ? [viteSingleFile()] : [])],
   server: {
     port: 5173,
+    // `shared/` sits outside the client root; allow Vite to serve it in dev.
+    fs: { allow: ['..'] },
     proxy: {
       '/api': {
         target: 'http://localhost:4000',

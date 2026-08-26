@@ -39,6 +39,9 @@ model Patient {
   packages  TreatmentPackage[]
   visits    Visit[]
   payments  Payment[]
+
+  @@index([phone])
+  @@index([name])
 }
 
 model Diagnosis {
@@ -78,7 +81,7 @@ model TreatmentPackage {
   payments     Payment[]
 }
 
-// status: PENDING | PAID | OVERDUE
+// status: PENDING | PAID (OVERDUE is derived from dueDate, never stored)
 model Installment {
   id        String           @id @default(cuid())
   packageId String
@@ -89,6 +92,14 @@ model Installment {
   status    String           @default("PENDING")
   notes     String?
   createdAt DateTime         @default(now())
+
+  // The Payment created when this installment was marked paid, so the two can never
+  // disagree: clearing the payment clears the installment and vice versa.
+  paymentId String?  @unique
+  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([dueDate])
+  @@index([packageId])
 }
 
 // type: INITIAL_CONSULT | SESSION | FOLLOWUP
@@ -117,6 +128,11 @@ model Visit {
   createdAt      DateTime          @default(now())
 
   payments Payment[]
+
+  @@index([scheduledDate])
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([packageId])
 }
 
 // type: ADVANCE | SESSION_FEE | INSTALLMENT | VISIT_FEE | REFUND
@@ -135,6 +151,11 @@ model Payment {
   date      DateTime          @default(now())
   notes     String?
   createdAt DateTime          @default(now())
+
+  installment Installment?
+
+  @@index([patientId, date])
+  @@index([date])
 }
 
 // Employee physiotherapists / consultants the clinic owner manages.

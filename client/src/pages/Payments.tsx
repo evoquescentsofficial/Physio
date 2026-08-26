@@ -12,6 +12,7 @@ import {
   toInputDate,
 } from '../components/ui';
 import { Payment } from '../types';
+import { netAmount, sumPayments } from '../../../shared/money';
 
 export default function Payments() {
   const now = new Date();
@@ -38,7 +39,7 @@ export default function Payments() {
     api.get('/reports/credits').then((r) => setCredits(r.data));
   }, []);
 
-  const total = payments.reduce((s, p) => s + (p.type === 'REFUND' ? -p.amount : p.amount), 0);
+  const total = sumPayments(payments);
   const advances = payments.filter((p) => p.type === 'ADVANCE').reduce((s, p) => s + p.amount, 0);
 
   return (
@@ -133,8 +134,12 @@ export default function Payments() {
                         <Badge value={p.type} />
                       </td>
                       <td className="px-5 py-3 text-ink-600">{p.method.replace(/_/g, ' ')}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-ink-900">
-                        {currency(p.amount)}
+                      <td
+                        className={`px-5 py-3 text-right font-semibold ${
+                          p.type === 'REFUND' ? 'text-red-600' : 'text-ink-900'
+                        }`}
+                      >
+                        {currency(netAmount(p))}
                       </td>
                     </tr>
                   ))}

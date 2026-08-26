@@ -31,3 +31,11 @@ export function requireRole(...roles: string[]) {
     next();
   };
 }
+
+/**
+ * Who may do what. Receptionists run the front desk — book, mark attendance, take money —
+ * but must not delete records, change the clinic's fees, or read the practice's finances.
+ */
+export const ADMIN_ONLY = requireRole('ADMIN');
+export const CLINICAL = requireRole('ADMIN', 'DOCTOR');
+export const FINANCE = requireRole('ADMIN', 'DOCTOR');

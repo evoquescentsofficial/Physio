@@ -8,6 +8,7 @@
 import type { AxiosAdapter, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { buildDemoDb } from './demoData';
 import { DemoDb } from './demoTypes';
+import { accountPosition, installmentStatus, netAmount, splitInstallments } from '../../../shared/money';
 
 // Bump when the stored shape changes, so browsers holding an older demo database
 // rebuild it instead of crashing on fields that did not exist then.
@@ -120,26 +121,13 @@ function bucketKeys(from: Date, to: Date, bucket: Bucket) {
 
 /** Mirrors the server's account calculation — see computeAccounts in reports.routes.ts. */
 function computeAccounts() {
-  return db.patients.map((p) => {
-    const packageValue = db.packages
-      .filter((k) => k.patientId === p.id && k.status !== 'CANCELLED')
-      .reduce((s, k) => s + k.totalFee, 0);
-    const paid = db.payments
-      .filter(
-        (y) =>
-          y.patientId === p.id &&
-          (y.packageId !== null || y.type === 'ADVANCE' || y.type === 'INSTALLMENT')
-      )
-      .reduce((s, y) => s + (y.type === 'REFUND' ? -y.amount : y.amount), 0);
-    const balance = packageValue - paid;
-    return {
-      patient: { id: p.id, name: p.name, phone: p.phone },
-      packageValue,
-      paid,
-      due: Math.max(balance, 0),
-      credit: Math.max(-balance, 0),
-    };
-  });
+  return db.patients.map((p) => ({
+    patient: { id: p.id, name: p.name, phone: p.phone },
+    ...accountPosition(
+      db.packages.filter((k) => k.patientId === p.id),
+      db.payments.filter((y) => y.patientId === p.id)
+    ),
+  }));
 }
 
 const doctorBrief = (doctorId: string | null) => {
@@ -313,7 +301,8 @@ function handle(method: string, path: string, params: any, body: any): any {
             ...k,
             installments: db.installments
               .filter((i) => i.packageId === k.id)
-              .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+              .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+              .map((i) => ({ ...i, status: installmentStatus(i) })),
             visits: db.visits
               .filter((v) => v.packageId === k.id)
               .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate)),
@@ -387,29 +376,35 @@ function handle(method: string, path: string, params: any, body: any): any {
     if (seg[1] === 'installments' && seg.length === 3) {
       const inst = db.installments.find((i) => i.id === seg[2]);
       if (method === 'put' && inst) {
+        const pkg = db.packages.find((k) => k.id === inst.packageId);
         Object.assign(inst, body);
-        if (body.status === 'PAID') {
-          inst.paidDate = new Date().toISOString();
-          const pkg = db.packages.find((k) => k.id === inst.packageId);
-          if (pkg) {
-            db.payments.push({
-              id: newId('pay_'),
-              patientId: pkg.patientId,
-              packageId: pkg.id,
-              visitId: null,
-              amount: inst.amount,
-              type: 'INSTALLMENT',
-              method: 'CASH',
-              date: new Date().toISOString(),
-              notes: 'Installment marked paid',
-            });
-          }
+        if (body.status === 'PAID' && !inst.paymentId && pkg) {
+          const payment = {
+            id: newId('pay_'),
+            patientId: pkg.patientId,
+            packageId: pkg.id,
+            visitId: null,
+            amount: inst.amount,
+            type: 'INSTALLMENT',
+            method: 'CASH',
+            date: new Date().toISOString(),
+            notes: `Installment for ${pkg.title}`,
+          };
+          db.payments.push(payment);
+          inst.paymentId = payment.id;
+          inst.paidDate = payment.date;
+        }
+        if (body.status && body.status !== 'PAID' && inst.paymentId) {
+          db.payments = db.payments.filter((y) => y.id !== inst.paymentId);
+          inst.paymentId = null;
+          inst.paidDate = null;
         }
         persist();
         return inst;
       }
-      if (method === 'delete') {
-        db.installments = db.installments.filter((i) => i.id !== seg[2]);
+      if (method === 'delete' && inst) {
+        db.installments = db.installments.filter((i) => i.id !== inst.id);
+        if (inst.paymentId) db.payments = db.payments.filter((y) => y.id !== inst.paymentId);
         persist();
         return null;
       }
@@ -464,6 +459,7 @@ function handle(method: string, path: string, params: any, body: any): any {
         paidDate: null,
         status: 'PENDING',
         notes: body.notes || null,
+        paymentId: null,
       };
       db.installments.push(inst);
       persist();
@@ -524,24 +520,24 @@ function handle(method: string, path: string, params: any, body: any): any {
             paidDate: null,
             status: 'PENDING',
             notes: null,
+            paymentId: null,
           });
         }
       } else if (count > 0 && totalFee - advance > 0) {
-        const balance = totalFee - advance;
-        const per = Math.floor(balance / count);
-        for (let i = 0; i < count; i++) {
+        splitInstallments(totalFee - advance, count).forEach((amount, i) => {
           const due = new Date(startDate);
           due.setMonth(due.getMonth() + i + 1);
           db.installments.push({
             id: newId('ins_'),
             packageId: pkg.id,
-            amount: i === count - 1 ? balance - per * (count - 1) : per,
+            amount,
             dueDate: due.toISOString(),
             paidDate: null,
             status: 'PENDING',
             notes: null,
+            paymentId: null,
           });
-        }
+        });
       }
 
       if (body.generateSchedule) {
@@ -823,12 +819,12 @@ function handle(method: string, path: string, params: any, body: any): any {
       const eod = new Date(sod.getTime() + 86399000);
 
       const monthPayments = db.payments.filter(
-        (p) => p.type !== 'REFUND' && new Date(p.date) >= som && new Date(p.date) <= eom
+        (p) => new Date(p.date) >= som && new Date(p.date) <= eom
       );
       const monthExpenses = db.expenses.filter(
         (e) => new Date(e.date) >= som && new Date(e.date) <= eom
       );
-      const monthRevenue = monthPayments.reduce((s, p) => s + p.amount, 0);
+      const monthRevenue = monthPayments.reduce((s, p) => s + netAmount(p), 0);
       const monthExpenseTotal = monthExpenses.reduce((s, e) => s + e.amount, 0);
 
       const accounts = computeAccounts();
@@ -862,14 +858,20 @@ function handle(method: string, path: string, params: any, body: any): any {
       const bKeys = bucketKeys(from, to, bucket);
       const by: Record<string, Record<string, number>> = {};
       for (const k of bKeys)
-        by[k] = { CHECKUP_FEE: 0, ADVANCE: 0, SESSION_FEE: 0, INSTALLMENT: 0, VISIT_FEE: 0 };
+        by[k] = {
+          CHECKUP_FEE: 0,
+          ADVANCE: 0,
+          SESSION_FEE: 0,
+          INSTALLMENT: 0,
+          VISIT_FEE: 0,
+          REFUND: 0,
+        };
       for (const p of db.payments) {
-        if (p.type === 'REFUND') continue;
         const d = new Date(p.date);
         if (d < from || d > to) continue;
         const k = bucketKey(d, bucket);
         if (!by[k] || by[k][p.type] === undefined) continue;
-        by[k][p.type] += p.amount;
+        by[k][p.type] += netAmount(p);
       }
       return bKeys.map((k) => ({
         month: bucketLabel(k, bucket),
@@ -909,11 +911,10 @@ function handle(method: string, path: string, params: any, body: any): any {
         exp[k] = 0;
       }
       for (const p of db.payments) {
-        if (p.type === 'REFUND') continue;
         const d = new Date(p.date);
         if (d < from || d > to) continue;
         const k = bucketKey(d, bucket);
-        if (rev[k] !== undefined) rev[k] += p.amount;
+        if (rev[k] !== undefined) rev[k] += netAmount(p);
       }
       for (const e of db.expenses) {
         const d = new Date(e.date);

@@ -14,6 +14,7 @@ import {
 } from '../components/ui';
 import { Diagnosis, Doctor, Patient, Payment, TreatmentPackage, Visit } from '../types';
 import { useSettings } from '../context/SettingsContext';
+import { accountPosition, installmentStatus, netAmount, sumPayments } from '../../../shared/money';
 
 type Tab = 'overview' | 'diagnoses' | 'packages' | 'sessions' | 'payments';
 
@@ -42,18 +43,13 @@ export default function PatientDetail() {
   if (!patient) return <div className="text-ink-400">Loading…</div>;
 
   const payments = patient.payments || [];
-  const totalPaid = payments.reduce((s, p) => s + (p.type === 'REFUND' ? -p.amount : p.amount), 0);
-  // Only packages create a debt; checkup and single-session fees are settled as they happen.
-  // Advances and installments count even without a package — that is money on account.
-  const packageValue = (patient.packages || [])
-    .filter((p) => p.status !== 'CANCELLED')
-    .reduce((s, p) => s + p.totalFee, 0);
-  const paidOnAccount = payments
-    .filter((p) => p.packageId || p.type === 'ADVANCE' || p.type === 'INSTALLMENT')
-    .reduce((s, p) => s + (p.type === 'REFUND' ? -p.amount : p.amount), 0);
-  const accountBalance = packageValue - paidOnAccount;
-  const balanceDue = Math.max(accountBalance, 0);
-  const creditBalance = Math.max(-accountBalance, 0);
+  const totalPaid = sumPayments(payments);
+  // Same helper the API uses, so the patient header and the outstanding-dues report
+  // can never disagree about what this person owes.
+  const { packageValue, due: balanceDue, credit: creditBalance } = accountPosition(
+    patient.packages || [],
+    payments
+  );
   const sessionsDone = (patient.visits || []).filter((v) => v.attendance === 'PRESENT').length;
   const sessionsPending = (patient.visits || []).filter((v) => v.attendance === 'SCHEDULED').length;
 
@@ -436,15 +432,7 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
   }
 
   // Existing credit on the account is applied to this package before anything is owed.
-  const existingCredit = (() => {
-    const value = (patient.packages || [])
-      .filter((p) => p.status !== 'CANCELLED')
-      .reduce((s, p) => s + p.totalFee, 0);
-    const paid = (patient.payments || [])
-      .filter((p) => p.packageId || p.type === 'ADVANCE' || p.type === 'INSTALLMENT')
-      .reduce((s, p) => s + (p.type === 'REFUND' ? -p.amount : p.amount), 0);
-    return Math.max(paid - value, 0);
-  })();
+  const existingCredit = accountPosition(patient.packages || [], patient.payments || []).credit;
 
   const totalFee = form.totalSessions * form.feePerSession;
   const settled = form.advanceAmount + existingCredit;
@@ -500,7 +488,7 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
       ) : (
         <div className="space-y-5">
           {patient.packages.map((p) => {
-            const paid = (p.payments || []).reduce((s, x) => s + x.amount, 0);
+            const paid = sumPayments(p.payments || []);
             const done = (p.visits || []).filter((v) => v.attendance === 'PRESENT').length;
             const startOfToday = new Date();
             startOfToday.setHours(0, 0, 0, 0);
@@ -595,14 +583,7 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                               <td className="py-2 text-ink-700">{formatDate(inst.dueDate)}</td>
                               <td className="py-2 text-ink-700">{currency(inst.amount)}</td>
                               <td className="py-2">
-                                <Badge
-                                  value={
-                                    inst.status === 'PENDING' &&
-                                    new Date(inst.dueDate) < new Date()
-                                      ? 'OVERDUE'
-                                      : inst.status
-                                  }
-                                />
+                                <Badge value={installmentStatus(inst)} />
                               </td>
                               <td className="py-2 text-right">
                                 {inst.status !== 'PAID' && (
@@ -1470,7 +1451,13 @@ function Payments({ patient, reload }: { patient: Patient; reload: () => void })
                       <Badge value={p.type} />
                     </td>
                     <td className="px-5 py-3 text-ink-600">{p.method.replace(/_/g, ' ')}</td>
-                    <td className="px-5 py-3 font-semibold text-ink-900">{currency(p.amount)}</td>
+                    <td
+                      className={`px-5 py-3 font-semibold ${
+                        p.type === 'REFUND' ? 'text-red-600' : 'text-ink-900'
+                      }`}
+                    >
+                      {currency(netAmount(p))}
+                    </td>
                     <td className="px-5 py-3 text-ink-500">{p.notes || '—'}</td>
                     <td className="px-5 py-3 text-right">
                       <button

@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
-import { requireAuth } from '../middleware/auth';
+import { FINANCE, requireAuth } from '../middleware/auth';
+import { accountPosition, netAmount } from '../../../shared/money';
 
 const router = Router();
 router.use(requireAuth);
@@ -25,26 +26,10 @@ async function computeAccounts() {
     },
   });
 
-  return patients.map((p) => {
-    const packageValue = p.packages
-      .filter((k) => k.status !== 'CANCELLED')
-      .reduce((s, k) => s + k.totalFee, 0);
-
-    const paid = p.payments.reduce((s, pay) => {
-      const onAccount = pay.packageId !== null || pay.type === 'ADVANCE' || pay.type === 'INSTALLMENT';
-      if (!onAccount) return s;
-      return s + (pay.type === 'REFUND' ? -pay.amount : pay.amount);
-    }, 0);
-
-    const balance = packageValue - paid;
-    return {
-      patient: { id: p.id, name: p.name, phone: p.phone },
-      packageValue,
-      paid,
-      due: Math.max(balance, 0),
-      credit: Math.max(-balance, 0),
-    };
-  });
+  return patients.map((p) => ({
+    patient: { id: p.id, name: p.name, phone: p.phone },
+    ...accountPosition(p.packages, p.payments),
+  }));
 }
 
 /**
@@ -139,13 +124,13 @@ router.get(
           orderBy: { scheduledDate: 'asc' },
         }),
         prisma.payment.findMany({
-          where: { date: { gte: startOfMonth, lte: endOfMonth }, type: { not: 'REFUND' } },
+          where: { date: { gte: startOfMonth, lte: endOfMonth } },
         }),
         prisma.expense.findMany({ where: { date: { gte: startOfMonth, lte: endOfMonth } } }),
         prisma.visit.count({ where: { attendance: 'SCHEDULED', scheduledDate: { lt: startOfDay } } }),
       ]);
 
-    const monthRevenue = monthPayments.reduce((s, p) => s + p.amount, 0);
+    const monthRevenue = monthPayments.reduce((s, p) => s + netAmount(p), 0);
     const monthExpenseTotal = monthExpenses.reduce((s, e) => s + e.amount, 0);
 
     // One patient's credit cannot pay another patient's bill, so the totals sum each side
@@ -170,22 +155,31 @@ router.get(
 
 router.get(
   '/revenue',
+  FINANCE,
   asyncHandler(async (req, res) => {
     const { from, to } = resolveRange(req.query);
     const bucket = bucketFor(from, to);
     const keys = bucketKeys(from, to, bucket);
 
     const payments = await prisma.payment.findMany({
-      where: { date: { gte: from, lte: to }, type: { not: 'REFUND' } },
+      where: { date: { gte: from, lte: to } },
     });
 
     const byBucket: Record<string, Record<string, number>> = {};
     for (const key of keys)
-      byBucket[key] = { CHECKUP_FEE: 0, ADVANCE: 0, SESSION_FEE: 0, INSTALLMENT: 0, VISIT_FEE: 0 };
+      byBucket[key] = {
+        CHECKUP_FEE: 0,
+        ADVANCE: 0,
+        SESSION_FEE: 0,
+        INSTALLMENT: 0,
+        VISIT_FEE: 0,
+        REFUND: 0,
+      };
     for (const p of payments) {
       const key = bucketKey(p.date, bucket);
       if (!byBucket[key]) continue;
-      byBucket[key][p.type] = (byBucket[key][p.type] || 0) + p.amount;
+      // Refunds are stacked as a negative slice so the bar shows the true net take.
+      byBucket[key][p.type] = (byBucket[key][p.type] || 0) + netAmount(p);
     }
 
     res.json(
@@ -225,13 +219,14 @@ router.get(
 
 router.get(
   '/profit-loss',
+  FINANCE,
   asyncHandler(async (req, res) => {
     const { from, to } = resolveRange(req.query);
     const bucket = bucketFor(from, to);
     const keys = bucketKeys(from, to, bucket);
 
     const [payments, expenses] = await Promise.all([
-      prisma.payment.findMany({ where: { date: { gte: from, lte: to }, type: { not: 'REFUND' } } }),
+      prisma.payment.findMany({ where: { date: { gte: from, lte: to } } }),
       prisma.expense.findMany({ where: { date: { gte: from, lte: to } } }),
     ]);
 
@@ -243,7 +238,7 @@ router.get(
     }
     for (const p of payments) {
       const key = bucketKey(p.date, bucket);
-      if (revenueBy[key] !== undefined) revenueBy[key] += p.amount;
+      if (revenueBy[key] !== undefined) revenueBy[key] += netAmount(p);
     }
     for (const e of expenses) {
       const key = bucketKey(e.date, bucket);

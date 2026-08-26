@@ -1,6 +1,8 @@
 import jwt from 'jsonwebtoken';
 
-const SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+import { config } from '../config';
+
+const SECRET = config.jwtSecret;
 
 export interface TokenPayload {
   id: string;

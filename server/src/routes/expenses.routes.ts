@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
-import { requireAuth } from '../middleware/auth';
+import { ADMIN_ONLY, FINANCE, requireAuth } from '../middleware/auth';
 
 const router = Router();
 router.use(requireAuth);
@@ -16,8 +16,10 @@ const expenseSchema = z.object({
   notes: z.string().optional().nullable(),
 });
 
+// Staff costs and rent are the owner's business, not the front desk's.
 router.get(
   '/',
+  FINANCE,
   asyncHandler(async (req, res) => {
     const { category, from, to } = req.query as Record<string, string>;
     const expenses = await prisma.expense.findMany({
@@ -36,6 +38,7 @@ router.get(
 
 router.post(
   '/',
+  FINANCE,
   asyncHandler(async (req, res) => {
     const data = expenseSchema.parse(req.body);
     const expense = await prisma.expense.create({
@@ -47,6 +50,7 @@ router.post(
 
 router.put(
   '/:id',
+  FINANCE,
   asyncHandler(async (req, res) => {
     const data = expenseSchema.partial().parse(req.body);
     const expense = await prisma.expense.update({
@@ -59,6 +63,7 @@ router.put(
 
 router.delete(
   '/:id',
+  ADMIN_ONLY,
   asyncHandler(async (req, res) => {
     await prisma.expense.delete({ where: { id: req.params.id } });
     res.status(204).end();

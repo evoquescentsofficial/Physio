@@ -24,8 +24,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
+    // Trust the server's answer, not the copy in localStorage: a role change or a
+    // deactivated account must take effect on next load rather than in seven days.
     api
       .get('/auth/me')
+      .then((res) => {
+        setUser(res.data.user);
+        localStorage.setItem('user', JSON.stringify(res.data.user));
+      })
       .catch(() => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');

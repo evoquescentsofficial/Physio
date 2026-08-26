@@ -212,6 +212,7 @@ export function buildDemoDb(): DemoDb {
         paidDate: isPaid ? due.toISOString() : null,
         status: isPaid ? 'PAID' : 'PENDING',
         notes: null,
+        paymentId: null,
       });
       if (isPaid) {
         db.payments.push({

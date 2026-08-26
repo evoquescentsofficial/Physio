@@ -174,6 +174,7 @@ export default function Reports() {
             <Bar dataKey="SESSION_FEE" name="Session fees" stackId="a" fill="#3b76f0" />
             <Bar dataKey="INSTALLMENT" name="Installments" stackId="a" fill="#93bafc" />
             <Bar dataKey="VISIT_FEE" name="Visit fees" stackId="a" fill="#bfd6fe" />
+            <Bar dataKey="REFUND" name="Refunds" stackId="a" fill="#be123c" />
           </BarChart>
         </ResponsiveContainer>
       </Card>

@@ -87,7 +87,11 @@ router.post(
 router.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const data = visitSchema.partial().parse(req.body);
+    // `count` and `frequencyDays` only describe how to create a run of sessions; they are
+    // not columns, and passing them through to Prisma throws.
+    const { count: _count, frequencyDays: _frequencyDays, ...data } = visitSchema
+      .partial()
+      .parse(req.body);
     const visit = await prisma.visit.update({
       where: { id: req.params.id },
       data: {
@@ -110,11 +114,17 @@ router.post(
       })
       .parse(req.body);
 
+    const existing = await prisma.visit.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Visit not found' });
+
     const visit = await prisma.visit.update({
       where: { id: req.params.id },
       data: {
         attendance: status,
-        completedDate: status === 'PRESENT' ? new Date() : null,
+        // Keep the first completion timestamp. Correcting an attendance mistake
+        // (present → absent → present) should not rewrite when the patient was treated.
+        completedDate:
+          status === 'PRESENT' ? (existing.completedDate ?? new Date()) : existing.completedDate,
         feeCollected: feeCollected ?? undefined,
       },
     });
@@ -179,31 +189,37 @@ router.post(
       orderBy: { scheduledDate: 'asc' },
     });
 
-    const created = [];
-    for (let i = 0; i < pending.length; i++) {
-      const source = pending[i];
-      const scheduledDate = new Date(newStartDate);
-      scheduledDate.setDate(scheduledDate.getDate() + i * frequencyDays);
-      await prisma.visit.update({
-        where: { id: source.id },
-        data: { attendance: 'CARRIED_FORWARD', carriedForward: true },
-      });
-      const nv = await prisma.visit.create({
-        data: {
-          patientId: source.patientId,
-          packageId: source.packageId,
-          diagnosisId: source.diagnosisId,
-          doctorId: source.doctorId,
-          sessionNumber: source.sessionNumber,
-          scheduledDate,
-          type: source.type,
-          fee: source.fee,
-          carriedFromId: source.id,
-          remarks: `Carried forward from ${source.scheduledDate.toDateString()}`,
-        },
-      });
-      created.push(nv);
-    }
+    // All or nothing: a failure part-way through would leave a half-carried month with
+    // some sessions marked carried forward and no replacements booked.
+    const created = await prisma.$transaction(async (tx) => {
+      const madeVisits = [];
+      for (let i = 0; i < pending.length; i++) {
+        const source = pending[i];
+        const scheduledDate = new Date(newStartDate);
+        scheduledDate.setDate(scheduledDate.getDate() + i * frequencyDays);
+        await tx.visit.update({
+          where: { id: source.id },
+          data: { attendance: 'CARRIED_FORWARD', carriedForward: true },
+        });
+        madeVisits.push(
+          await tx.visit.create({
+            data: {
+              patientId: source.patientId,
+              packageId: source.packageId,
+              diagnosisId: source.diagnosisId,
+              doctorId: source.doctorId,
+              sessionNumber: source.sessionNumber,
+              scheduledDate,
+              type: source.type,
+              fee: source.fee,
+              carriedFromId: source.id,
+              remarks: `Carried forward from ${source.scheduledDate.toDateString()}`,
+            },
+          })
+        );
+      }
+      return madeVisits;
+    });
 
     res.status(201).json({ count: created.length, visits: created });
   })

@@ -26,11 +26,45 @@ router.post(
   })
 );
 
+/**
+ * Read the user from the database rather than echoing the token. A token stays valid for
+ * seven days, so trusting its contents means a revoked account or a demoted role keeps
+ * working for a week.
+ */
 router.get(
   '/me',
   requireAuth,
   asyncHandler(async (req, res) => {
-    res.json({ user: req.user });
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { id: true, name: true, email: true, role: true },
+    });
+    if (!user) return res.status(401).json({ error: 'This account no longer exists' });
+    res.json({ user });
+  })
+);
+
+const passwordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8, 'Use at least 8 characters'),
+});
+
+router.post(
+  '/change-password',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { currentPassword, newPassword } = passwordSchema.parse(req.body);
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!user) return res.status(401).json({ error: 'This account no longer exists' });
+
+    const valid = await bcrypt.compare(currentPassword, user.password);
+    if (!valid) return res.status(400).json({ error: 'Current password is incorrect' });
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: await bcrypt.hash(newPassword, 10) },
+    });
+    res.json({ ok: true });
   })
 );
 
@@ -73,6 +107,20 @@ router.delete(
   requireAuth,
   requireRole('ADMIN'),
   asyncHandler(async (req, res) => {
+    // Deleting yourself, or the last admin, locks everyone out of user management.
+    if (req.params.id === req.user!.id) {
+      return res.status(400).json({ error: 'You cannot delete your own account' });
+    }
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) return res.status(404).json({ error: 'User not found' });
+
+    if (target.role === 'ADMIN') {
+      const admins = await prisma.user.count({ where: { role: 'ADMIN' } });
+      if (admins <= 1) {
+        return res.status(400).json({ error: 'The clinic must keep at least one admin' });
+      }
+    }
+
     await prisma.user.delete({ where: { id: req.params.id } });
     res.status(204).end();
   })

@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
-import { requireAuth } from '../middleware/auth';
+import { ADMIN_ONLY, requireAuth } from '../middleware/auth';
+import { installmentStatus } from '../../../shared/money';
 
 const router = Router();
 router.use(requireAuth);
@@ -67,7 +68,15 @@ router.get(
       },
     });
     if (!patient) return res.status(404).json({ error: 'Patient not found' });
-    res.json(patient);
+
+    // OVERDUE is a fact about today rather than a stored state, so it is derived on read.
+    res.json({
+      ...patient,
+      packages: patient.packages.map((pkg) => ({
+        ...pkg,
+        installments: pkg.installments.map((i) => ({ ...i, status: installmentStatus(i) })),
+      })),
+    });
   })
 );
 
@@ -88,14 +97,22 @@ router.put(
     const data = patientSchema.partial().parse(req.body);
     const patient = await prisma.patient.update({
       where: { id: req.params.id },
-      data: { ...data, dob: data.dob ? new Date(data.dob) : undefined, email: data.email || null },
+      data: {
+        ...data,
+        dob: data.dob ? new Date(data.dob) : undefined,
+        // A field the caller left out must stay untouched; only an explicitly empty
+        // value clears it. `data.email || null` would erase it on any partial update.
+        email: data.email === undefined ? undefined : data.email || null,
+      },
     });
     res.json(patient);
   })
 );
 
+// Deleting a patient destroys their whole history, including revenue already reported.
 router.delete(
   '/:id',
+  ADMIN_ONLY,
   asyncHandler(async (req, res) => {
     await prisma.patient.delete({ where: { id: req.params.id } });
     res.status(204).end();
