@@ -14,7 +14,18 @@ Amounts are shown in Pakistani Rupees (Rs).
 - Per-patient summary: package value, total paid, balance due, session progress
 
 **Diagnoses & treatment**
-- Multiple diagnoses per patient with clinical details, treatment plan, remarks and attending doctor
+- **Condition library** of 26 common physiotherapy presentations. Type "slip disc", "back pain"
+  or "frozen shoulder" and the matching condition appears; picking it fills the treatment plan
+  with the standard protocol and sets the body region. Anything not in the list can still be
+  typed freely — the library is a shortcut, not a whitelist (`shared/conditions.ts`)
+- A filled plan is never overwritten by a later template pick, and "Reset to the standard plan"
+  puts it back if wanted
+- **Structured fields**: body region, side, and a 0–10 pain score at assessment, so the clinic
+  can report on what it treats and measure progress against a baseline
+- Attending doctor is picked from the clinic's doctors rather than retyped
+- **Straight into treatment**: after saving a diagnosis from the library, the app offers the
+  package that usually follows it — sessions, frequency and fee pre-filled — and books the whole
+  schedule in one click
 - Diagnoses can be linked to treatment packages
 
 **Doctors**

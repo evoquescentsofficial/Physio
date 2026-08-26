@@ -293,7 +293,8 @@ function handle(method: string, path: string, params: any, body: any): any {
         ...p,
         diagnoses: db.diagnoses
           .filter((d) => d.patientId === patientId)
-          .sort((a, b) => b.date.localeCompare(a.date)),
+          .sort((a, b) => b.date.localeCompare(a.date))
+          .map((d) => ({ ...d, doctor: doctorBrief(d.doctorId || null) })),
         packages: db.packages
           .filter((k) => k.patientId === patientId)
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -353,6 +354,10 @@ function handle(method: string, path: string, params: any, body: any): any {
         treatmentPlan: body.treatmentPlan || null,
         remarks: body.remarks || null,
         doctorName: body.doctorName || null,
+        doctorId: body.doctorId || null,
+        bodyRegion: body.bodyRegion || null,
+        side: body.side || null,
+        painScore: body.painScore ?? null,
       };
       db.diagnoses.push(d);
       persist();

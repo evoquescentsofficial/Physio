@@ -33,6 +33,10 @@ export interface DemoDiagnosis {
   treatmentPlan: string | null;
   remarks: string | null;
   doctorName: string | null;
+  doctorId?: string | null;
+  bodyRegion?: string | null;
+  side?: string | null;
+  painScore?: number | null;
 }
 
 export interface DemoPackage {

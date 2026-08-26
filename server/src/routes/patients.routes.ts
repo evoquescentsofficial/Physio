@@ -51,7 +51,10 @@ router.get(
     const patient = await prisma.patient.findUnique({
       where: { id: req.params.id },
       include: {
-        diagnoses: { orderBy: { date: 'desc' } },
+        diagnoses: {
+          orderBy: { date: 'desc' },
+          include: { doctor: { select: { id: true, name: true } } },
+        },
         packages: {
           orderBy: { createdAt: 'desc' },
           include: {

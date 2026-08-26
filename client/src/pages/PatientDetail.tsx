@@ -16,6 +16,8 @@ import {
 } from '../components/ui';
 import { Diagnosis, Doctor, Patient, Payment, TreatmentPackage, Visit } from '../types';
 import { useSettings } from '../context/SettingsContext';
+import DiagnosisForm from '../components/DiagnosisForm';
+import { ConditionTemplate } from '../../../shared/conditions';
 import {
   accountPosition,
   installmentStatus,
@@ -413,25 +415,13 @@ function Overview({ patient }: { patient: Patient }) {
 function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Diagnosis | null>(null);
-  const emptyForm = {
-    title: '',
-    date: toInputDate(new Date()),
-    details: '',
-    treatmentPlan: '',
-    remarks: '',
-    doctorName: '',
-  };
-  const [form, setForm] = useState(emptyForm);
   const [confirming, setConfirming] = useState<Diagnosis | null>(null);
-
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    const payload = { ...form, patientId: patient.id };
-    if (editing) await api.put(`/diagnoses/${editing.id}`, payload);
-    else await api.post('/diagnoses', payload);
-    setOpen(false);
-    reload();
-  }
+  // After saving a new diagnosis from a template, offer the package it usually leads to
+  // rather than making the clinician navigate away and re-enter the same numbers.
+  const [suggested, setSuggested] = useState<{
+    diagnosis: Diagnosis;
+    template: ConditionTemplate;
+  } | null>(null);
 
   async function remove(d: Diagnosis) {
     await api.delete(`/diagnoses/${d.id}`);
@@ -446,7 +436,6 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
           className="btn-primary"
           onClick={() => {
             setEditing(null);
-            setForm(emptyForm);
             setOpen(true);
           }}
         >
@@ -463,11 +452,32 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
           {patient.diagnoses.map((d) => (
             <Card key={d.id} className="p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h4 className="font-semibold text-ink-900">{d.title}</h4>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="font-semibold text-ink-900">{d.title}</h4>
+                    {d.bodyRegion && (
+                      <span className="badge bg-brand-50 text-brand-700">
+                        {d.bodyRegion}
+                        {d.side ? ` · ${d.side}` : ''}
+                      </span>
+                    )}
+                    {d.painScore != null && (
+                      <span
+                        className={`badge ${
+                          d.painScore <= 3
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : d.painScore <= 6
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-red-100 text-red-700'
+                        }`}
+                      >
+                        Pain {d.painScore}/10
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-ink-400">
                     {formatDate(d.date)}
-                    {d.doctorName ? ` · Dr. ${d.doctorName}` : ''}
+                    {d.doctor?.name ? ` · ${d.doctor.name}` : d.doctorName ? ` · ${d.doctorName}` : ''}
                   </div>
                 </div>
                 <div className="flex gap-1">
@@ -476,14 +486,6 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
                     label="Edit diagnosis"
                     onClick={() => {
                       setEditing(d);
-                      setForm({
-                        title: d.title,
-                        date: toInputDate(d.date),
-                        details: d.details || '',
-                        treatmentPlan: d.treatmentPlan || '',
-                        remarks: d.remarks || '',
-                        doctorName: d.doctorName || '',
-                      });
                       setOpen(true);
                     }}
                   />
@@ -524,71 +526,139 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
         onConfirm={() => remove(confirming!)}
       />
 
-      <Modal
+      <DiagnosisForm
         open={open}
+        editing={editing}
+        patientId={patient.id}
         onClose={() => setOpen(false)}
-        title={editing ? 'Edit Diagnosis' : 'Add Diagnosis'}
-        wide
-      >
-        <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
-          <Field label="Diagnosis / condition">
-            <input
-              className="input"
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              required
-            />
-          </Field>
-          <Field label="Date">
-            <input
-              className="input"
-              type="date"
-              value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
-            />
-          </Field>
-          <Field label="Attending doctor" className="sm:col-span-2">
-            <input
-              className="input"
-              value={form.doctorName}
-              onChange={(e) => setForm({ ...form, doctorName: e.target.value })}
-            />
-          </Field>
-          <Field label="Clinical details" className="sm:col-span-2">
-            <textarea
-              className="input"
-              rows={3}
-              value={form.details}
-              onChange={(e) => setForm({ ...form, details: e.target.value })}
-            />
-          </Field>
-          <Field label="Treatment plan" className="sm:col-span-2">
-            <textarea
-              className="input"
-              rows={3}
-              value={form.treatmentPlan}
-              onChange={(e) => setForm({ ...form, treatmentPlan: e.target.value })}
-            />
-          </Field>
-          <Field label="Remarks" className="sm:col-span-2">
-            <textarea
-              className="input"
-              rows={2}
-              value={form.remarks}
-              onChange={(e) => setForm({ ...form, remarks: e.target.value })}
-            />
-          </Field>
-          <div className="flex justify-end gap-2 sm:col-span-2">
-            <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary">
-              Save
-            </button>
-          </div>
-        </form>
-      </Modal>
+        onSaved={(diagnosis, template) => {
+          setOpen(false);
+          reload();
+          if (template) setSuggested({ diagnosis, template });
+        }}
+      />
+
+      {suggested && (
+        <SuggestPackageModal
+          patient={patient}
+          diagnosis={suggested.diagnosis}
+          template={suggested.template}
+          onClose={() => setSuggested(null)}
+          reload={reload}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * The step that always follows a diagnosis: the course of treatment. Everything is already
+ * known from the condition and the clinic's default fee, so this is a confirmation rather
+ * than a form to fill in again.
+ */
+function SuggestPackageModal({
+  patient,
+  diagnosis,
+  template,
+  onClose,
+  reload,
+}: {
+  patient: Patient;
+  diagnosis: Diagnosis;
+  template: ConditionTemplate;
+  onClose: () => void;
+  reload: () => void;
+}) {
+  const { settings } = useSettings();
+  const [sessions, setSessions] = useState(template.sessions);
+  const [fee, setFee] = useState(settings.defaultSessionFee);
+  const [frequencyDays, setFrequencyDays] = useState(template.frequencyDays);
+  const [busy, setBusy] = useState(false);
+
+  async function create() {
+    setBusy(true);
+    try {
+      await api.post('/packages', {
+        patientId: patient.id,
+        diagnosisId: diagnosis.id,
+        title: `${diagnosis.title} — ${sessions} sessions`,
+        totalSessions: Number(sessions),
+        feePerSession: Number(fee),
+        generateSchedule: true,
+        scheduleFrequencyDays: Number(frequencyDays),
+        advanceAmount: 0,
+        installmentCount: 0,
+      });
+      onClose();
+      reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Start the treatment package?">
+      <div className="space-y-4">
+        <p className="text-sm text-ink-600">
+          <span className="font-semibold text-ink-900">{diagnosis.title}</span> usually needs a
+          course of treatment. Set it up now and the sessions are booked in one go — or skip and
+          do it later from the Packages tab.
+        </p>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Sessions">
+            <input
+              className="input"
+              type="number"
+              min={1}
+              value={sessions}
+              onChange={(e) => setSessions(Math.max(1, Number(e.target.value)))}
+            />
+          </Field>
+          <Field label="Fee per session">
+            <input
+              className="input"
+              type="number"
+              min={0}
+              value={fee}
+              onChange={(e) => setFee(Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Every (days)">
+            <input
+              className="input"
+              type="number"
+              min={1}
+              value={frequencyDays}
+              onChange={(e) => setFrequencyDays(Math.max(1, Number(e.target.value)))}
+            />
+          </Field>
+        </div>
+
+        <div className="rounded-lg border border-brand-100 bg-ink-50 px-4 py-3 text-sm">
+          <div className="flex justify-between py-1">
+            <span className="text-ink-600">
+              {sessions} sessions × {currency(fee)}
+            </span>
+            <span className="font-bold text-brand-700">{currency(sessions * fee)}</span>
+          </div>
+          <div className="text-xs text-ink-500">
+            Sessions are booked one every {frequencyDays} day
+            {frequencyDays === 1 ? '' : 's'} from today. Advance and installments can be added on
+            the package afterwards.
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Not now
+          </button>
+          <button type="button" className="btn-primary" onClick={create} disabled={busy}>
+            {busy ? 'Creating…' : `Create package & book ${sessions} sessions`}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

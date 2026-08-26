@@ -37,6 +37,11 @@ export interface Diagnosis {
   treatmentPlan?: string | null;
   remarks?: string | null;
   doctorName?: string | null;
+  doctorId?: string | null;
+  doctor?: { id: string; name: string } | null;
+  bodyRegion?: string | null;
+  side?: string | null;
+  painScore?: number | null;
 }
 
 export type PackageStatus = 'ACTIVE' | 'COMPLETED' | 'CANCELLED';

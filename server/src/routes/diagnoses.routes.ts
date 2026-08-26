@@ -15,6 +15,10 @@ const diagnosisSchema = z.object({
   treatmentPlan: z.string().optional().nullable(),
   remarks: z.string().optional().nullable(),
   doctorName: z.string().optional().nullable(),
+  doctorId: z.string().optional().nullable(),
+  bodyRegion: z.string().optional().nullable(),
+  side: z.string().optional().nullable(),
+  painScore: z.number().int().min(0).max(10).optional().nullable(),
 });
 
 router.get(
@@ -24,7 +28,10 @@ router.get(
     const diagnoses = await prisma.diagnosis.findMany({
       where: patientId ? { patientId } : undefined,
       orderBy: { date: 'desc' },
-      include: { patient: { select: { name: true } } },
+      include: {
+        patient: { select: { name: true } },
+        doctor: { select: { id: true, name: true } },
+      },
     });
     res.json(diagnoses);
   })

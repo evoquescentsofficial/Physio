@@ -158,7 +158,11 @@ export function buildDemoDb(): DemoDb {
       details: condition[1],
       treatmentPlan: 'Manual therapy, TENS, supervised strengthening exercises.',
       remarks: 'Advised to avoid heavy lifting and continue home exercises.',
-      doctorName: 'Dr. Imran',
+      doctorName: db.doctors[idx % db.doctors.length].name,
+      doctorId: db.doctors[idx % db.doctors.length].id,
+      bodyRegion: ['Lower back', 'Shoulder', 'Knee', 'Neck', 'Ankle & foot'][idx % 5],
+      side: ['Left', 'Right', 'Both', 'Not applicable'][idx % 4],
+      painScore: 4 + (idx % 5),
     });
 
     // the two newest patients are checkup-only so far — no package yet

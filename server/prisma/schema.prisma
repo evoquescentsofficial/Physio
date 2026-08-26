@@ -53,11 +53,23 @@ model Diagnosis {
   details       String?
   treatmentPlan String?
   remarks       String?
+  // Free text kept for records written before the clinic had a doctors list, and for
+  // referrals from outside the clinic. New entries link to a Doctor instead.
   doctorName    String?
+  doctorId      String?
+  doctor        Doctor?  @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+  // Where the problem is, and which side — structured so the clinic can see what it treats
+  // most rather than having it buried in prose.
+  bodyRegion    String?
+  side          String?
+  // Baseline pain out of 10 at assessment, the number progress is measured against.
+  painScore     Int?
   createdAt     DateTime @default(now())
 
   packages TreatmentPackage[]
   visits   Visit[]
+
+  @@index([patientId])
 }
 
 // status: ACTIVE | COMPLETED | CANCELLED
@@ -177,7 +189,8 @@ model Doctor {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  visits Visit[]
+  visits    Visit[]
+  diagnoses Diagnosis[]
 }
 
 // Single-row table (id is always "clinic") holding clinic-wide defaults.
