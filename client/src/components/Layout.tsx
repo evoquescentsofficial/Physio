@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import Logo from './Logo';
+import { ConfirmDialog } from './ui';
 import { IS_DEMO } from '../api/client';
 import { resetDemoData } from '../api/demoAdapter';
 
@@ -23,6 +24,7 @@ export default function Layout() {
   const clinicName = settings.clinicName;
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   function handleLogout() {
     logout();
@@ -103,12 +105,7 @@ export default function Layout() {
               </span>
               <button
                 className="btn-secondary !py-1 !text-xs"
-                onClick={() => {
-                  if (confirm('Reset the demo back to the original sample data?')) {
-                    resetDemoData();
-                    window.location.reload();
-                  }
-                }}
+                onClick={() => setConfirmReset(true)}
               >
                 Reset demo
               </button>
@@ -118,6 +115,19 @@ export default function Layout() {
         <main className="p-6">
           <Outlet />
         </main>
+
+        <ConfirmDialog
+          open={confirmReset}
+          title="Reset the demo?"
+          message="Everything you have entered here is discarded and the original sample clinic comes back."
+          confirmLabel="Reset demo"
+          tone="primary"
+          onCancel={() => setConfirmReset(false)}
+          onConfirm={() => {
+            resetDemoData();
+            window.location.reload();
+          }}
+        />
       </div>
     </div>
   );

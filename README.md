@@ -28,7 +28,11 @@ Amounts are shown in Pakistani Rupees (Rs).
 
 **Two kinds of fee**
 - **Checkup fee** — charged once on the patient's first visit. The patient page shows a prompt
-  until it has been recorded, and one click records it at the clinic's default rate.
+  until it has been recorded: one click charges the standard rate, or **Change amount** opens
+  a dialog for a family rate, a concession or a free visit
+- A discounted or waived visit records what was actually collected as the payment and what was
+  given up as a discount, so revenue stays honest, the visit still appears in the patient's
+  history, and the giveaway is visible in **Discounts given** on the Payments page
 - **Session fee** — charged per session, either as a single paid session or inside a package.
 
 **Treatment packages & sessions**
@@ -107,6 +111,8 @@ definition of every rule rather than one per codebase:
 - **Installment rounding** goes on the last installment, so the parts sum to the balance exactly.
 - **OVERDUE is derived, never stored** — it is a fact about today, so a nightly job cannot
   get it wrong between runs.
+- **A discount is not revenue.** Only what was collected counts; the concession is recorded
+  separately so it can be totalled without inflating income.
 
 `npm test --prefix server` runs the unit tests covering these rules.
 
@@ -235,5 +241,7 @@ Deliberate gaps, in the order they should be closed:
 - **No pagination.** Every list endpoint returns the whole table.
 - **SQLite** is single-writer and single-machine — fine for one front desk, not for two.
 - **No audit trail.** Nothing records who took a payment or edited a record.
+- **No toast notifications.** Destructive actions confirm in-app and show their errors, but a
+  successful save gives no visible acknowledgement beyond the list updating.
 - **Deletes are hard deletes.** Removing a patient removes their history with them.
 - **No appointment times.** Sessions have a date but no time, duration or double-booking check.

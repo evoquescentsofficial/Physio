@@ -2,8 +2,10 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import {
   Card,
+  ConfirmDialog,
   EmptyState,
   Field,
+  IconButton,
   Modal,
   PageHeader,
   currency,
@@ -30,6 +32,7 @@ export default function Expenses() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
+  const [confirming, setConfirming] = useState<Expense | null>(null);
 
   const emptyForm = {
     category: 'SALARY' as ExpenseCategory,
@@ -64,8 +67,8 @@ export default function Expenses() {
   }
 
   async function remove(x: Expense) {
-    if (!confirm('Delete this expense?')) return;
     await api.delete(`/expenses/${x.id}`);
+    setConfirming(null);
     load();
   }
 
@@ -165,8 +168,9 @@ export default function Expenses() {
                       {currency(x.amount)}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <button
-                        className="btn-ghost !py-1"
+                      <IconButton
+                        icon="edit"
+                        label={`Edit ${x.title}`}
                         onClick={() => {
                           setEditing(x);
                           setForm({
@@ -179,15 +183,13 @@ export default function Expenses() {
                           });
                           setOpen(true);
                         }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="btn-ghost !py-1 text-red-600 hover:bg-red-50"
-                        onClick={() => remove(x)}
-                      >
-                        Delete
-                      </button>
+                      />
+                      <IconButton
+                        icon="trash"
+                        label={`Delete ${x.title}`}
+                        tone="danger"
+                        onClick={() => setConfirming(x)}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -196,6 +198,19 @@ export default function Expenses() {
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={!!confirming}
+        title="Delete this expense?"
+        message={
+          <>
+            {confirming?.title} — {confirming ? currency(confirming.amount) : ''}. Removing it
+            changes your recorded profit for that month.
+          </>
+        }
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => remove(confirming!)}
+      />
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Expense' : 'Add Expense'}>
         <form onSubmit={save} className="space-y-4">

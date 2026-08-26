@@ -1,7 +1,17 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { Card, EmptyState, Field, Modal, PageHeader, formatDate, toInputDate } from '../components/ui';
+import {
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  Field,
+  IconButton,
+  Modal,
+  PageHeader,
+  formatDate,
+  toInputDate,
+} from '../components/ui';
 import { Patient } from '../types';
 
 const empty = {
@@ -25,6 +35,7 @@ export default function Patients() {
   const [editing, setEditing] = useState<Patient | null>(null);
   const [form, setForm] = useState(empty);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState<Patient | null>(null);
 
   async function load() {
     const res = await api.get('/patients', { params: { q } });
@@ -75,8 +86,8 @@ export default function Patients() {
   }
 
   async function remove(p: Patient) {
-    if (!confirm(`Delete ${p.name}? This removes all their records.`)) return;
     await api.delete(`/patients/${p.id}`);
+    setConfirming(null);
     await load();
   }
 
@@ -134,15 +145,15 @@ export default function Patients() {
                     <td className="px-5 py-3 text-ink-600">{formatDate(p.createdAt)}</td>
                     <td className="px-5 py-3 text-ink-600">{p._count?.visits ?? 0}</td>
                     <td className="px-5 py-3 text-right">
-                      <button className="btn-ghost !py-1" onClick={() => openEdit(p)}>
-                        Edit
-                      </button>
-                      <button
-                        className="btn-ghost !py-1 text-red-600 hover:bg-red-50"
-                        onClick={() => remove(p)}
-                      >
-                        Delete
-                      </button>
+                      <div className="flex justify-end gap-1">
+                        <IconButton icon="edit" label={`Edit ${p.name}`} onClick={() => openEdit(p)} />
+                        <IconButton
+                          icon="trash"
+                          label={`Delete ${p.name}`}
+                          tone="danger"
+                          onClick={() => setConfirming(p)}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -151,6 +162,20 @@ export default function Patients() {
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={!!confirming}
+        title={`Delete ${confirming?.name ?? ''}?`}
+        message={
+          <>
+            This permanently removes their diagnoses, sessions and payment history. Money already
+            recorded against them will disappear from your reports. This cannot be undone.
+          </>
+        }
+        confirmLabel="Delete patient"
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => remove(confirming!)}
+      />
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Patient' : 'Add Patient'} wide>
         <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">

@@ -11,7 +11,10 @@ const paymentSchema = z.object({
   patientId: z.string().min(1),
   packageId: z.string().optional().nullable(),
   visitId: z.string().optional().nullable(),
-  amount: z.number().positive(),
+  // Zero is valid: a waived visit is still worth recording, so the patient's history
+  // shows they were seen and the giveaway is visible in the discount total.
+  amount: z.number().min(0),
+  discount: z.number().min(0).default(0),
   type: z.enum(['CHECKUP_FEE', 'ADVANCE', 'SESSION_FEE', 'INSTALLMENT', 'VISIT_FEE', 'REFUND']),
   method: z.enum(['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'OTHER']).default('CASH'),
   date: z.string().optional(),

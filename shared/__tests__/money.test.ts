@@ -4,6 +4,8 @@ import {
   installmentStatus,
   netAmount,
   splitInstallments,
+  standardAmount,
+  sumDiscounts,
   sumOnAccount,
   sumPayments,
 } from '../money';
@@ -120,5 +122,30 @@ describe('installmentStatus', () => {
 
   it('stays paid even long after the due date', () => {
     expect(installmentStatus({ status: 'PAID', dueDate: '2026-01-01' }, now)).toBe('PAID');
+  });
+});
+
+describe('discounts', () => {
+  it('reports what the visit would have cost before the concession', () => {
+    expect(standardAmount({ amount: 500, type: 'CHECKUP_FEE', discount: 500 })).toBe(1000);
+    expect(standardAmount({ amount: 1000, type: 'CHECKUP_FEE' })).toBe(1000);
+  });
+
+  it('totals what was given away, including fully waived visits', () => {
+    expect(
+      sumDiscounts([
+        { amount: 750, type: 'CHECKUP_FEE', discount: 250 },
+        { amount: 0, type: 'CHECKUP_FEE', discount: 1000 },
+        { amount: 1500, type: 'SESSION_FEE' },
+      ])
+    ).toBe(1250);
+  });
+
+  it('counts only what was actually collected as revenue', () => {
+    const collected = sumPayments([
+      { amount: 750, type: 'CHECKUP_FEE', discount: 250 },
+      { amount: 0, type: 'CHECKUP_FEE', discount: 1000 },
+    ]);
+    expect(collected).toBe(750);
   });
 });

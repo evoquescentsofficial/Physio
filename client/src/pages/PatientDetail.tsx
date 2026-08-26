@@ -4,8 +4,10 @@ import { api } from '../api/client';
 import {
   Badge,
   Card,
+  ConfirmDialog,
   EmptyState,
   Field,
+  IconButton,
   Modal,
   StatCard,
   currency,
@@ -14,7 +16,12 @@ import {
 } from '../components/ui';
 import { Diagnosis, Doctor, Patient, Payment, TreatmentPackage, Visit } from '../types';
 import { useSettings } from '../context/SettingsContext';
-import { accountPosition, installmentStatus, netAmount, sumPayments } from '../../../shared/money';
+import {
+  accountPosition,
+  installmentStatus,
+  netAmount,
+  sumPayments,
+} from '../../../shared/money';
 
 type Tab = 'overview' | 'diagnoses' | 'packages' | 'sessions' | 'payments';
 
@@ -135,16 +142,19 @@ export default function PatientDetail() {
 function CheckupFeeBanner({ patient, reload }: { patient: Patient; reload: () => void }) {
   const { settings } = useSettings();
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
   const alreadyPaid = (patient.payments || []).some((p) => p.type === 'CHECKUP_FEE');
 
   if (alreadyPaid) return null;
 
-  async function record() {
+  /** Full price in one click — the common case shouldn't cost a dialog. */
+  async function recordFull() {
     setBusy(true);
     try {
       await api.post('/payments', {
         patientId: patient.id,
         amount: settings.checkupFee,
+        discount: 0,
         type: 'CHECKUP_FEE',
         method: 'CASH',
         notes: 'First visit checkup fee',
@@ -156,18 +166,187 @@ function CheckupFeeBanner({ patient, reload }: { patient: Patient; reload: () =>
   }
 
   return (
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 px-5 py-4">
-      <div>
-        <div className="font-semibold text-teal-900">Checkup fee not recorded</div>
-        <div className="text-sm text-teal-700">
-          Charge the first-visit checkup fee of {currency(settings.checkupFee)} before starting a
-          treatment package.
+    <>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 px-5 py-4">
+        <div>
+          <div className="font-semibold text-teal-900">Checkup fee not recorded</div>
+          <div className="text-sm text-teal-700">
+            Charge the first-visit checkup fee of {currency(settings.checkupFee)} before starting a
+            treatment package.
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-secondary" onClick={() => setOpen(true)}>
+            Change amount
+          </button>
+          <button
+            className="btn-primary !bg-teal-600 hover:!bg-teal-700"
+            onClick={recordFull}
+            disabled={busy}
+          >
+            {busy ? 'Recording…' : `Record ${currency(settings.checkupFee)}`}
+          </button>
         </div>
       </div>
-      <button className="btn-primary !bg-teal-600 hover:!bg-teal-700" onClick={record} disabled={busy}>
-        {busy ? 'Recording…' : `Record ${currency(settings.checkupFee)}`}
-      </button>
-    </div>
+
+      {open && (
+        <ChargeFeeModal
+          patient={patient}
+          standardFee={settings.checkupFee}
+          onClose={() => setOpen(false)}
+          reload={reload}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * Charging something other than the list price: a family rate, a concession for someone who
+ * can't pay in full, or a waived visit. What was actually collected is stored as the amount
+ * and what was given up as the discount, so a free visit still appears in the patient's
+ * history and the giveaway stays visible rather than vanishing.
+ */
+function ChargeFeeModal({
+  patient,
+  standardFee,
+  onClose,
+  reload,
+}: {
+  patient: Patient;
+  standardFee: number;
+  onClose: () => void;
+  reload: () => void;
+}) {
+  const [amount, setAmount] = useState<number>(standardFee);
+  const [method, setMethod] = useState('CASH');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const charged = Math.max(0, Math.min(amount || 0, standardFee));
+  const discount = Math.max(standardFee - charged, 0);
+  const percentOff = standardFee > 0 ? Math.round((discount / standardFee) * 100) : 0;
+
+  const presets = [
+    { label: 'Full fee', value: standardFee },
+    { label: '25% off', value: Math.round(standardFee * 0.75) },
+    { label: '50% off', value: Math.round(standardFee * 0.5) },
+    { label: 'Free', value: 0 },
+  ];
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api.post('/payments', {
+        patientId: patient.id,
+        amount: charged,
+        discount,
+        type: 'CHECKUP_FEE',
+        method,
+        notes:
+          reason.trim() ||
+          (discount === standardFee
+            ? 'Checkup fee waived'
+            : discount > 0
+              ? 'Checkup fee, discounted'
+              : 'First visit checkup fee'),
+      });
+      onClose();
+      reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Record checkup fee">
+      <form onSubmit={save} className="space-y-4">
+        <div className="rounded-lg bg-ink-50 px-4 py-3 text-sm text-ink-600">
+          Standard checkup fee is{' '}
+          <span className="font-semibold text-ink-900">{currency(standardFee)}</span>. Charge less
+          for family, friends or a patient who cannot pay in full.
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {presets.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => setAmount(p.value)}
+              className={charged === p.value ? 'btn-primary !py-1' : 'btn-secondary !py-1'}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <Field label="Amount to charge">
+          <input
+            className="input"
+            type="number"
+            min={0}
+            max={standardFee}
+            value={amount}
+            onChange={(e) => setAmount(Number(e.target.value))}
+            autoFocus
+            required
+          />
+        </Field>
+
+        <Field label="Paid by">
+          <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
+            <option value="CASH">Cash</option>
+            <option value="CARD">Card</option>
+            <option value="UPI">Mobile wallet</option>
+            <option value="BANK_TRANSFER">Bank transfer</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </Field>
+
+        <Field label="Reason (optional)">
+          <input
+            className="input"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Family · Friend of the clinic · Cannot afford full fee"
+          />
+        </Field>
+
+        <div className="rounded-lg border border-brand-100 bg-ink-50 p-4 text-sm">
+          <div className="flex justify-between py-1">
+            <span className="text-ink-600">Standard fee</span>
+            <span className="font-semibold text-ink-900">{currency(standardFee)}</span>
+          </div>
+          <div className="flex justify-between py-1">
+            <span className="text-ink-600">Discount</span>
+            <span className="font-semibold text-emerald-600">
+              − {currency(discount)}
+              {discount > 0 && <span className="ml-1 text-xs">({percentOff}%)</span>}
+            </span>
+          </div>
+          <div className="flex justify-between border-t border-ink-200 py-1 pt-2">
+            <span className="text-ink-600">Collecting now</span>
+            <span className="font-bold text-ink-900">{currency(charged)}</span>
+          </div>
+          {charged === 0 && (
+            <div className="mt-2 rounded bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              Free visit. Nothing is collected, but the checkup is still recorded against this
+              patient and the {currency(standardFee)} shows in the clinic's discount total.
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? 'Recording…' : charged === 0 ? 'Record free visit' : `Record ${currency(charged)}`}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -243,6 +422,7 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
     doctorName: '',
   };
   const [form, setForm] = useState(emptyForm);
+  const [confirming, setConfirming] = useState<Diagnosis | null>(null);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -254,8 +434,8 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
   }
 
   async function remove(d: Diagnosis) {
-    if (!confirm('Delete this diagnosis?')) return;
     await api.delete(`/diagnoses/${d.id}`);
+    setConfirming(null);
     reload();
   }
 
@@ -290,9 +470,10 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
                     {d.doctorName ? ` · Dr. ${d.doctorName}` : ''}
                   </div>
                 </div>
-                <div>
-                  <button
-                    className="btn-ghost !py-1"
+                <div className="flex gap-1">
+                  <IconButton
+                    icon="edit"
+                    label="Edit diagnosis"
                     onClick={() => {
                       setEditing(d);
                       setForm({
@@ -305,15 +486,13 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
                       });
                       setOpen(true);
                     }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="btn-ghost !py-1 text-red-600 hover:bg-red-50"
-                    onClick={() => remove(d)}
-                  >
-                    Delete
-                  </button>
+                  />
+                  <IconButton
+                    icon="trash"
+                    label="Delete diagnosis"
+                    tone="danger"
+                    onClick={() => setConfirming(d)}
+                  />
                 </div>
               </div>
               <div className="mt-4 grid gap-4 sm:grid-cols-3">
@@ -336,6 +515,14 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirming}
+        title="Delete this diagnosis?"
+        message={<>{confirming?.title} and its clinical notes will be removed from the record.</>}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => remove(confirming!)}
+      />
 
       <Modal
         open={open}
@@ -411,6 +598,7 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
   const [instFor, setInstFor] = useState<TreatmentPackage | null>(null);
   const [carryFor, setCarryFor] = useState<TreatmentPackage | null>(null);
   const [extendFor, setExtendFor] = useState<TreatmentPackage | null>(null);
+  const [confirmingPkg, setConfirmingPkg] = useState<TreatmentPackage | null>(null);
   const emptyForm = {
     title: '',
     diagnosisId: '',
@@ -463,8 +651,8 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
   }
 
   async function removePkg(p: TreatmentPackage) {
-    if (!confirm('Delete this package and its scheduled sessions?')) return;
     await api.delete(`/packages/${p.id}`);
+    setConfirmingPkg(null);
     reload();
   }
 
@@ -520,12 +708,12 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                     <button className="btn-ghost !py-1" onClick={() => setInstFor(p)}>
                       + Installment
                     </button>
-                    <button
-                      className="btn-ghost !py-1 text-red-600 hover:bg-red-50"
-                      onClick={() => removePkg(p)}
-                    >
-                      Delete
-                    </button>
+                    <IconButton
+                      icon="trash"
+                      label="Delete package"
+                      tone="danger"
+                      onClick={() => setConfirmingPkg(p)}
+                    />
                   </div>
                 </div>
 
@@ -771,6 +959,20 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={!!confirmingPkg}
+        title="Delete this package?"
+        message={
+          <>
+            {confirmingPkg?.title} and its scheduled sessions will be removed. Payments already
+            taken against it stay on the patient's record and will show as credit.
+          </>
+        }
+        confirmLabel="Delete package"
+        onCancel={() => setConfirmingPkg(null)}
+        onConfirm={() => removePkg(confirmingPkg!)}
+      />
 
       <ExtendPackageModal pkg={extendFor} onClose={() => setExtendFor(null)} reload={reload} />
       <InstallmentModal pkg={instFor} onClose={() => setInstFor(null)} reload={reload} />
@@ -1069,6 +1271,7 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
   };
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
+  const [confirmingVisit, setConfirmingVisit] = useState<Visit | null>(null);
 
   const selectedPackage = patient.packages?.find((p) => p.id === form.packageId);
   const alreadyScheduled = selectedPackage
@@ -1104,16 +1307,12 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
     reload();
   }
 
+  // Errors surface inside the dialog, including the API's refusal to delete a session
+  // that has a payment attached to it.
   async function removeVisit(visit: Visit) {
-    const label = visit.sessionNumber ? `session #${visit.sessionNumber}` : 'this visit';
-    if (!confirm(`Delete ${label} on ${formatDate(visit.scheduledDate)}? This cannot be undone.`))
-      return;
-    try {
-      await api.delete(`/visits/${visit.id}`);
-      reload();
-    } catch (err: any) {
-      alert(err.response?.data?.error || 'Could not delete this session.');
-    }
+    await api.delete(`/visits/${visit.id}`);
+    setConfirmingVisit(null);
+    reload();
   }
 
   async function save(e: FormEvent) {
@@ -1235,13 +1434,12 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
                       >
                         Cancel
                       </button>
-                      <button
-                        className="btn-ghost !px-2 !py-1 text-ink-400 hover:bg-red-50 hover:text-red-600"
-                        title="Delete this session permanently"
-                        onClick={() => removeVisit(v)}
-                      >
-                        ✕
-                      </button>
+                      <IconButton
+                        icon="trash"
+                        label="Delete this session permanently"
+                        tone="danger"
+                        onClick={() => setConfirmingVisit(v)}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -1250,6 +1448,23 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={!!confirmingVisit}
+        title="Delete this session?"
+        message={
+          <>
+            {confirmingVisit?.sessionNumber
+              ? `Session #${confirmingVisit.sessionNumber}`
+              : 'This visit'}{' '}
+            on {formatDate(confirmingVisit?.scheduledDate)} will be removed along with its
+            attendance record. To keep the history instead, use Cancel on the row.
+          </>
+        }
+        confirmLabel="Delete session"
+        onCancel={() => setConfirmingVisit(null)}
+        onConfirm={() => removeVisit(confirmingVisit!)}
+      />
 
       <Modal open={open} onClose={() => setOpen(false)} title="Add Session / Visit" wide>
         <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
@@ -1396,6 +1611,7 @@ function Payments({ patient, reload }: { patient: Patient; reload: () => void })
     notes: '',
   };
   const [form, setForm] = useState(emptyForm);
+  const [confirmingPayment, setConfirmingPayment] = useState<Payment | null>(null);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -1414,8 +1630,8 @@ function Payments({ patient, reload }: { patient: Patient; reload: () => void })
   }
 
   async function remove(p: Payment) {
-    if (!confirm('Delete this payment record?')) return;
     await api.delete(`/payments/${p.id}`);
+    setConfirmingPayment(null);
     reload();
   }
 
@@ -1458,14 +1674,21 @@ function Payments({ patient, reload }: { patient: Patient; reload: () => void })
                     >
                       {currency(netAmount(p))}
                     </td>
-                    <td className="px-5 py-3 text-ink-500">{p.notes || '—'}</td>
+                    <td className="px-5 py-3 text-ink-500">
+                      {p.notes || '—'}
+                      {!!p.discount && (
+                        <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          {currency(p.discount)} off
+                        </span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-right">
-                      <button
-                        className="btn-ghost !py-1 text-red-600 hover:bg-red-50"
-                        onClick={() => remove(p)}
-                      >
-                        Delete
-                      </button>
+                      <IconButton
+                        icon="trash"
+                        label="Delete payment"
+                        tone="danger"
+                        onClick={() => setConfirmingPayment(p)}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -1474,6 +1697,21 @@ function Payments({ patient, reload }: { patient: Patient; reload: () => void })
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={!!confirmingPayment}
+        title="Delete this payment?"
+        message={
+          <>
+            {confirmingPayment ? currency(confirmingPayment.amount) : ''} recorded on{' '}
+            {formatDate(confirmingPayment?.date)} will be removed. Your revenue and this
+            patient's balance both change as a result.
+          </>
+        }
+        confirmLabel="Delete payment"
+        onCancel={() => setConfirmingPayment(null)}
+        onConfirm={() => remove(confirmingPayment!)}
+      />
 
       <Modal open={open} onClose={() => setOpen(false)} title="Record Payment">
         <form onSubmit={save} className="space-y-4">

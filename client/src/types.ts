@@ -124,6 +124,8 @@ export interface Payment {
   packageId?: string | null;
   visitId?: string | null;
   amount: number;
+  /** Taken off the standard fee — a family rate, concession or waived visit. */
+  discount?: number;
   type: PaymentType;
   method: PaymentMethod;
   date: string;

@@ -745,6 +745,7 @@ function handle(method: string, path: string, params: any, body: any): any {
         packageId: body.packageId || null,
         visitId: body.visitId || null,
         amount: body.amount,
+        discount: body.discount || 0,
         type: body.type,
         method: body.method || 'CASH',
         date: body.date ? new Date(body.date).toISOString() : new Date().toISOString(),

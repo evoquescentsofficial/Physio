@@ -53,6 +53,17 @@ export interface MoneyRow {
   amount: number;
   type: string;
   packageId?: string | null;
+  discount?: number | null;
+}
+
+/** What the visit would have cost before any concession was applied. */
+export function standardAmount(payment: MoneyRow): number {
+  return payment.amount + (payment.discount || 0);
+}
+
+/** Total given away as family rates, concessions and waived visits. */
+export function sumDiscounts(payments: MoneyRow[]): number {
+  return payments.reduce((total, p) => total + (p.discount || 0), 0);
 }
 
 /** A refund is money leaving the till, so it counts against revenue rather than for it. */

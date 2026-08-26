@@ -2,8 +2,10 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import {
   Card,
+  ConfirmDialog,
   EmptyState,
   Field,
+  IconButton,
   Modal,
   PageHeader,
   currency,
@@ -38,6 +40,7 @@ export default function Doctors() {
   const [editing, setEditing] = useState<Doctor | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState<Doctor | null>(null);
 
   const load = useCallback(async () => {
     const res = await api.get('/doctors', { params: { includeInactive: showInactive } });
@@ -95,13 +98,8 @@ export default function Doctors() {
   }
 
   async function remove(d: Doctor) {
-    if (
-      !confirm(
-        `Remove ${d.name}? If they have treated patients they will be marked inactive instead, so past sessions keep their name.`
-      )
-    )
-      return;
     await api.delete(`/doctors/${d.id}`);
+    setConfirming(null);
     load();
   }
 
@@ -238,20 +236,32 @@ export default function Doctors() {
                 <button className="btn-ghost !py-1" onClick={() => toggleActive(d)}>
                   {d.active ? 'Mark as left' : 'Reactivate'}
                 </button>
-                <button className="btn-ghost !py-1" onClick={() => openEdit(d)}>
-                  Edit
-                </button>
-                <button
-                  className="btn-ghost !py-1 text-red-600 hover:bg-red-50"
-                  onClick={() => remove(d)}
-                >
-                  Remove
-                </button>
+                <IconButton icon="edit" label={`Edit ${d.name}`} onClick={() => openEdit(d)} />
+                <IconButton
+                  icon="trash"
+                  label={`Remove ${d.name}`}
+                  tone="danger"
+                  onClick={() => setConfirming(d)}
+                />
               </div>
             </Card>
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirming}
+        title={`Remove ${confirming?.name ?? ''}?`}
+        message={
+          <>
+            If they have treated patients they are marked as having left instead of being
+            deleted, so past sessions keep their name. They can be reactivated at any time.
+          </>
+        }
+        confirmLabel="Remove doctor"
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => remove(confirming!)}
+      />
 
       <Modal
         open={open}

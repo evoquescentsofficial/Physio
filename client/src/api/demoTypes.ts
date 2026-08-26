@@ -98,6 +98,7 @@ export interface DemoPayment {
   packageId: string | null;
   visitId: string | null;
   amount: number;
+  discount?: number;
   type: string;
   method: string;
   date: string;

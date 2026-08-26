@@ -146,6 +146,9 @@ model Payment {
   visitId   String?
   visit     Visit?            @relation(fields: [visitId], references: [id], onDelete: SetNull)
   amount    Float
+  // What was taken off the standard fee, for a family rate, a concession or a waived
+  // visit. `amount` is always what was actually collected; this records what was given up.
+  discount  Float             @default(0)
   type      String
   method    String            @default("CASH")
   date      DateTime          @default(now())

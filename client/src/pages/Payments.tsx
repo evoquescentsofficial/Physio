@@ -12,7 +12,7 @@ import {
   toInputDate,
 } from '../components/ui';
 import { Payment } from '../types';
-import { netAmount, sumPayments } from '../../../shared/money';
+import { netAmount, sumDiscounts, sumPayments } from '../../../shared/money';
 
 export default function Payments() {
   const now = new Date();
@@ -41,6 +41,7 @@ export default function Payments() {
 
   const total = sumPayments(payments);
   const advances = payments.filter((p) => p.type === 'ADVANCE').reduce((s, p) => s + p.amount, 0);
+  const discountsGiven = sumDiscounts(payments);
 
   return (
     <div>
@@ -77,9 +78,12 @@ export default function Payments() {
         </Card>
         <Card className="px-5 py-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-ink-400">
-            Advances received
+            Discounts given
           </div>
-          <div className="mt-1 text-xl font-bold text-brand-700">{currency(advances)}</div>
+          <div className="mt-1 text-xl font-bold text-brand-700">{currency(discountsGiven)}</div>
+          <div className="mt-0.5 text-xs text-ink-400">
+            {currency(advances)} taken as advances
+          </div>
         </Card>
         <Card className="px-5 py-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-ink-400">
@@ -132,6 +136,11 @@ export default function Payments() {
                       </td>
                       <td className="px-5 py-3">
                         <Badge value={p.type} />
+                        {!!p.discount && (
+                          <span className="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                            {currency(p.discount)} off
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-ink-600">{p.method.replace(/_/g, ' ')}</td>
                       <td
