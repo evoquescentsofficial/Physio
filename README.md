@@ -9,7 +9,9 @@ Amounts are shown in Pakistani Rupees (Rs).
 
 **Patients**
 - Add / edit / delete patients with full contact and medical details (phone, email, DOB, gender,
-  blood group, occupation, referred by, emergency contact, address, notes)
+  blood group, occupation, referred by, attendant, emergency contact, address, notes)
+- **Attendant** records whoever brings the patient in — a family member, a carer, a driver. It is
+  optional, since plenty of patients come alone, and it shows on the patient's overview
 - Live search by name, phone or email
 - Per-patient summary: package value, total paid, balance due, session progress
 

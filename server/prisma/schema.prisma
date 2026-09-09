@@ -29,6 +29,8 @@ model Patient {
   occupation       String?
   referredBy       String?
   bloodGroup       String?
+  // Whoever brings the patient in — a son, a driver, a carer. Optional: plenty come alone.
+  attendantName    String?
   emergencyContact String?
   notes            String?
   photoUrl         String?

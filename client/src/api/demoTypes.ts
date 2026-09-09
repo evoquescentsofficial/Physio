@@ -18,6 +18,7 @@ export interface DemoPatient {
   occupation: string | null;
   referredBy: string | null;
   bloodGroup: string | null;
+  attendantName?: string | null;
   emergencyContact: string | null;
   notes: string | null;
   createdAt: string;

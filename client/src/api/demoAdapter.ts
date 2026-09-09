@@ -276,6 +276,7 @@ function handle(method: string, path: string, params: any, body: any): any {
         occupation: body.occupation || null,
         referredBy: body.referredBy || null,
         bloodGroup: body.bloodGroup || null,
+        attendantName: body.attendantName || null,
         emergencyContact: body.emergencyContact || null,
         notes: body.notes || null,
         createdAt: now,

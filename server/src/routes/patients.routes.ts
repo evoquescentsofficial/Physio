@@ -18,9 +18,31 @@ const patientSchema = z.object({
   occupation: z.string().optional().nullable(),
   referredBy: z.string().optional().nullable(),
   bloodGroup: z.string().optional().nullable(),
+  attendantName: z.string().optional().nullable(),
   emergencyContact: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
+
+// Everything except name and phone is optional. A field the caller left out must stay
+// untouched on a partial update, while one sent empty means "not recorded" and is stored
+// as null — otherwise '' and null would both float around meaning the same thing.
+const OPTIONAL_TEXT = [
+  'email',
+  'address',
+  'gender',
+  'occupation',
+  'referredBy',
+  'bloodGroup',
+  'attendantName',
+  'emergencyContact',
+  'notes',
+] as const;
+
+function blanksToNull<T extends Record<string, unknown>>(data: T): T {
+  const out: Record<string, unknown> = { ...data };
+  for (const key of OPTIONAL_TEXT) if (key in out) out[key] = out[key] || null;
+  return out as T;
+}
 
 router.get(
   '/',
@@ -88,7 +110,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const data = patientSchema.parse(req.body);
     const patient = await prisma.patient.create({
-      data: { ...data, dob: data.dob ? new Date(data.dob) : null, email: data.email || null },
+      data: { ...blanksToNull(data), dob: data.dob ? new Date(data.dob) : null },
     });
     res.status(201).json(patient);
   })
@@ -101,11 +123,8 @@ router.put(
     const patient = await prisma.patient.update({
       where: { id: req.params.id },
       data: {
-        ...data,
+        ...blanksToNull(data),
         dob: data.dob ? new Date(data.dob) : undefined,
-        // A field the caller left out must stay untouched; only an explicitly empty
-        // value clears it. `data.email || null` would erase it on any partial update.
-        email: data.email === undefined ? undefined : data.email || null,
       },
     });
     res.json(patient);

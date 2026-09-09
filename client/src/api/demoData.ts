@@ -56,6 +56,22 @@ const PEOPLE = [
   ['Maryam Butt', '0335-3456789', 'Female', 'Accountant'],
 ];
 
+// The attendant is optional, so the sample data leaves plenty of patients without one.
+const ATTENDANTS: (string | null)[] = [
+  'Raza Ahmed (son)',
+  null,
+  null,
+  'Sadia Siddiqui (daughter)',
+  null,
+  'Asif Malik (husband)',
+  null,
+  'Javed Iqbal (father)',
+  null,
+  null,
+  'Shahid Ahmed (brother)',
+  null,
+];
+
 const CONDITIONS: [string, string][] = [
   ['Lower back pain (L4-L5 disc bulge)', 'Chronic pain radiating to left leg, onset 3 months ago.'],
   ['Frozen shoulder (right)', 'Restricted range of motion, worse at night.'],
@@ -129,6 +145,8 @@ export function buildDemoDb(): DemoDb {
       occupation,
       referredBy: idx % 3 === 0 ? 'Dr. Saleem' : null,
       bloodGroup: null,
+      // Some patients are brought in by family, others come on their own.
+      attendantName: ATTENDANTS[idx % ATTENDANTS.length],
       emergencyContact: null,
       notes: null,
       createdAt: registered.toISOString(),

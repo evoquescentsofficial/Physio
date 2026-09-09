@@ -24,6 +24,7 @@ const empty = {
   occupation: '',
   referredBy: '',
   bloodGroup: '',
+  attendantName: '',
   emergencyContact: '',
   notes: '',
 };
@@ -65,6 +66,7 @@ export default function Patients() {
       occupation: p.occupation || '',
       referredBy: p.referredBy || '',
       bloodGroup: p.bloodGroup || '',
+      attendantName: p.attendantName || '',
       emergencyContact: p.emergencyContact || '',
       notes: p.notes || '',
     });
@@ -242,6 +244,17 @@ export default function Patients() {
               className="input"
               value={form.referredBy}
               onChange={(e) => setForm({ ...form, referredBy: e.target.value })}
+            />
+          </Field>
+          <Field
+            label="Attendant name (optional)"
+            hint="Whoever brings the patient in — a family member, a carer, a driver."
+          >
+            <input
+              className="input"
+              value={form.attendantName}
+              onChange={(e) => setForm({ ...form, attendantName: e.target.value })}
+              placeholder="Leave blank if they come alone"
             />
           </Field>
           <Field label="Emergency contact">

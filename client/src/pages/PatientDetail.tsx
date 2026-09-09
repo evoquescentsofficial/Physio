@@ -366,6 +366,7 @@ function Overview({ patient }: { patient: Patient }) {
     ['Blood group', patient.bloodGroup || '—'],
     ['Occupation', patient.occupation || '—'],
     ['Referred by', patient.referredBy || '—'],
+    ['Attendant', patient.attendantName || '—'],
     ['Emergency contact', patient.emergencyContact || '—'],
     ['Address', patient.address || '—'],
     ['Registered on', formatDate(patient.createdAt)],
