@@ -24,6 +24,11 @@ import {
   netAmount,
   sumPayments,
 } from '../../../shared/money';
+import {
+  inferFrequencyDays,
+  lastScheduledDate,
+  nextSessionDate,
+} from '../../../shared/scheduling';
 
 type Tab = 'overview' | 'diagnoses' | 'packages' | 'sessions' | 'payments';
 
@@ -1044,7 +1049,12 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
         onConfirm={() => removePkg(confirmingPkg!)}
       />
 
-      <ExtendPackageModal pkg={extendFor} onClose={() => setExtendFor(null)} reload={reload} />
+      <ExtendPackageModal
+        pkg={extendFor}
+        visits={patient.visits || []}
+        onClose={() => setExtendFor(null)}
+        reload={reload}
+      />
       <InstallmentModal pkg={instFor} onClose={() => setInstFor(null)} reload={reload} />
       <CarryForwardModal pkg={carryFor} onClose={() => setCarryFor(null)} reload={reload} />
     </div>
@@ -1057,10 +1067,12 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
  */
 function ExtendPackageModal({
   pkg,
+  visits,
   onClose,
   reload,
 }: {
   pkg: TreatmentPackage | null;
+  visits: Visit[];
   onClose: () => void;
   reload: () => void;
 }) {
@@ -1071,13 +1083,30 @@ function ExtendPackageModal({
   const [feePerSession, setFeePerSession] = useState(0);
   const [busy, setBusy] = useState(false);
 
+  // Sessions that still hold a place in the diary — cancelled and carried-forward ones do not.
+  const booked = visits
+    .filter(
+      (v) =>
+        v.packageId === pkg?.id &&
+        v.attendance !== 'CANCELLED' &&
+        v.attendance !== 'CARRIED_FORWARD'
+    )
+    .map((v) => v.scheduledDate);
+  const lastBooked = lastScheduledDate(booked);
+
   useEffect(() => {
     if (pkg) {
       setExtraSessions(10);
       setFeePerSession(pkg.feePerSession);
-      setStartDate(toInputDate(new Date()));
+      // More sessions continue the course: they start after the ones already booked, at the
+      // cadence this package is actually running at, not from today.
+      const freq = inferFrequencyDays(booked);
+      setFrequencyDays(freq);
+      setStartDate(toInputDate(nextSessionDate(booked, freq)));
     }
-  }, [pkg]);
+    // Only re-derive when a different package is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pkg?.id]);
 
   if (!pkg) return null;
 
@@ -1123,7 +1152,16 @@ function ExtendPackageModal({
             required
           />
         </Field>
-        <Field label="First new session on">
+        <Field
+          label="First new session on"
+          hint={
+            lastBooked
+              ? `The last session on this package is ${formatDate(
+                  lastBooked.toISOString()
+                )} — the new run starts after it.`
+              : undefined
+          }
+        >
           <input
             className="input"
             type="date"
@@ -1342,6 +1380,7 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
   const [confirmingVisit, setConfirmingVisit] = useState<Visit | null>(null);
+  const [carryVisit, setCarryVisit] = useState<Visit | null>(null);
 
   const selectedPackage = patient.packages?.find((p) => p.id === form.packageId);
   const alreadyScheduled = selectedPackage
@@ -1357,20 +1396,49 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
     return d;
   })();
 
+  /**
+   * The dates that currently hold a place in the diary. Cancelled and carried-forward slots do
+   * not, so they must not push the next session out.
+   */
+  function bookedDates(packageId: string) {
+    return (patient.visits || [])
+      .filter((v) => (packageId ? v.packageId === packageId : true))
+      .filter((v) => v.attendance !== 'CANCELLED' && v.attendance !== 'CARRIED_FORWARD')
+      .map((v) => v.scheduledDate);
+  }
+
+  /**
+   * A new session belongs *after* the course already booked, not today: a package that runs to
+   * mid-September would otherwise get the new sessions dropped in among the existing ones and the
+   * patient would end up with two appointments on the same day. The gap between them is read from
+   * the dates already booked, so a further run keeps the rhythm the patient is used to.
+   */
+  function scheduleDefaults(packageId: string) {
+    const dates = bookedDates(packageId);
+    const frequencyDays = inferFrequencyDays(dates);
+    return { scheduledDate: toInputDate(nextSessionDate(dates, frequencyDays)), frequencyDays };
+  }
+
   function openNew() {
-    setForm({ ...emptyForm, fee: settings.defaultSessionFee });
+    setForm({ ...emptyForm, fee: settings.defaultSessionFee, ...scheduleDefaults('') });
     setOpen(true);
   }
 
-  /** Picking a package adopts its per-session fee, since that is what the patient agreed to. */
+  /**
+   * Picking a package adopts its per-session fee, since that is what the patient agreed to, and
+   * re-dates the run to follow that package's own schedule rather than the patient's other work.
+   */
   function choosePackage(packageId: string) {
     const pkg = patient.packages?.find((p) => p.id === packageId);
     setForm((f) => ({
       ...f,
       packageId,
       fee: pkg ? pkg.feePerSession : settings.defaultSessionFee,
+      ...scheduleDefaults(packageId),
     }));
   }
+
+  const lastBooked = lastScheduledDate(bookedDates(form.packageId));
 
   async function mark(visit: Visit, status: string) {
     await api.post(`/visits/${visit.id}/attendance`, { status });
@@ -1504,6 +1572,13 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
                       >
                         Cancel
                       </button>
+                      {v.attendance !== 'CARRIED_FORWARD' && (
+                        <IconButton
+                          icon="forward"
+                          label="Carry this session forward to a new date"
+                          onClick={() => setCarryVisit(v)}
+                        />
+                      )}
                       <IconButton
                         icon="trash"
                         label="Delete this session permanently"
@@ -1534,6 +1609,13 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
         confirmLabel="Delete session"
         onCancel={() => setConfirmingVisit(null)}
         onConfirm={() => removeVisit(confirmingVisit!)}
+      />
+
+      <CarrySessionModal
+        visit={carryVisit}
+        bookedDates={bookedDates(carryVisit?.packageId || '')}
+        onClose={() => setCarryVisit(null)}
+        reload={reload}
       />
 
       <Modal open={open} onClose={() => setOpen(false)} title="Add Session / Visit" wide>
@@ -1578,7 +1660,16 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
               required
             />
           </Field>
-          <Field label={form.count > 1 ? 'First session on' : 'Date'}>
+          <Field
+            label={form.count > 1 ? 'First session on' : 'Date'}
+            hint={
+              lastBooked
+                ? `Follows the last session booked ${
+                    form.packageId ? 'on this package' : 'for this patient'
+                  } (${formatDate(lastBooked.toISOString())}) — change it if they are coming sooner.`
+                : undefined
+            }
+          >
             <input
               className="input"
               type="date"
@@ -1667,6 +1758,84 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
         </form>
       </Modal>
     </div>
+  );
+}
+
+/**
+ * A missed session does not disappear, it moves: the original is kept and marked carried forward,
+ * and a replacement is booked. The default date puts it after everything else already booked, so
+ * a session missed in the middle of a course is picked up at the end of it rather than double-
+ * booking a day the patient is already coming in.
+ */
+function CarrySessionModal({
+  visit,
+  bookedDates,
+  onClose,
+  reload,
+}: {
+  visit: Visit | null;
+  bookedDates: string[];
+  onClose: () => void;
+  reload: () => void;
+}) {
+  const [newDate, setNewDate] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!visit) return;
+    setError('');
+    setNewDate(toInputDate(nextSessionDate(bookedDates, inferFrequencyDays(bookedDates))));
+    // Re-dating only needs to happen when a different session is picked up.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visit?.id]);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!visit) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.post(`/visits/${visit.id}/carry-forward`, { newDate });
+      onClose();
+      reload();
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'Could not carry this session forward.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={!!visit} onClose={onClose} title="Carry this session forward">
+      <form onSubmit={save} className="space-y-4">
+        <p className="text-sm text-ink-600">
+          {visit?.sessionNumber ? `Session #${visit.sessionNumber}` : 'This visit'} from{' '}
+          {formatDate(visit?.scheduledDate)} stays in the history marked carried forward, and a
+          replacement session is booked on the new date. The package total does not change.
+        </p>
+        <Field label="New date" hint="Set to follow the sessions already booked.">
+          <input
+            className="input"
+            type="date"
+            value={newDate}
+            onChange={(e) => setNewDate(e.target.value)}
+            required
+          />
+        </Field>
+        {error && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+        )}
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? 'Moving…' : 'Carry forward'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

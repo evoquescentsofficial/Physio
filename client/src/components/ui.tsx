@@ -30,8 +30,10 @@ export function PageHeader({
   );
 }
 
+export type IconName = 'edit' | 'trash' | 'plus' | 'check' | 'x' | 'forward';
+
 /** Small line icons, so row actions read as actions rather than a wall of blue words. */
-export function Icon({ name, className = 'h-4 w-4' }: { name: 'edit' | 'trash' | 'plus' | 'check' | 'x'; className?: string }) {
+export function Icon({ name, className = 'h-4 w-4' }: { name: IconName; className?: string }) {
   const paths: Record<string, React.ReactNode> = {
     edit: (
       <path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3zM14.5 6.5l3 3" />
@@ -46,6 +48,8 @@ export function Icon({ name, className = 'h-4 w-4' }: { name: 'edit' | 'trash' |
     plus: <path d="M12 5v14M5 12h14" />,
     check: <path d="M5 13l4 4L19 7" />,
     x: <path d="M6 6l12 12M18 6L6 18" />,
+    // Pushed along to a later date: an arrow running up against a stop.
+    forward: <path d="M4 12h12M12 7l5 5-5 5M20 5v14" />,
   };
   return (
     <svg
@@ -71,7 +75,7 @@ export function IconButton({
   tone = 'default',
   className = '',
 }: {
-  icon: 'edit' | 'trash' | 'plus' | 'check' | 'x';
+  icon: IconName;
   label: string;
   onClick: () => void;
   tone?: 'default' | 'danger';
@@ -216,15 +220,19 @@ export function Field({
   label,
   children,
   className = '',
+  hint,
 }: {
   label: string;
   children: React.ReactNode;
   className?: string;
+  /** A line under the input explaining a default the app has chosen for the user. */
+  hint?: React.ReactNode;
 }) {
   return (
     <div className={className}>
       <label className="label">{label}</label>
       {children}
+      {hint && <p className="mt-1 text-xs text-ink-500">{hint}</p>}
     </div>
   );
 }

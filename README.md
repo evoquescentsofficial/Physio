@@ -53,6 +53,11 @@ Amounts are shown in Pakistani Rupees (Rs).
 - Add a run of sessions in one go: choose how many and how many days apart, and the dates,
   session numbers and fees are filled in — numbering continues from the package's existing
   sessions, and the form warns if the run takes the package past the sessions paid for
+- **New sessions are dated after the course already booked**, not from today, so they never land
+  in the middle of a schedule that runs into next month and give the patient two appointments on
+  one day. The gap between them is read from the dates already booked, so a further run keeps the
+  rhythm the patient is used to. The form names the last booked date and the default can be
+  overridden whenever the patient is coming sooner (`shared/scheduling.ts`)
 - Extend a finished package: book N more sessions and, when they are chargeable, the
   package's session count and total fee rise to match so the extra work is billed
 - Assign a doctor when booking sessions, and reassign any session later from a dropdown in
@@ -64,7 +69,9 @@ Amounts are shown in Pakistani Rupees (Rs).
 
 **Attendance & carry-forward**
 - Mark each scheduled session Present / Absent / Cancelled on the day it was scheduled
-- Carry forward a single missed session to a new date
+- Carry forward a single missed session to a new date, from the patient's own session list or the
+  clinic-wide sessions page — the date defaults to after everything else already booked, so a
+  session missed mid-course is picked up at the end of it
 - Bulk carry-forward: move all of a package's overdue pending sessions into next month at a chosen
   frequency — the original is marked `CARRIED_FORWARD` so history is never lost
 - Quick filters: today, this week, this month, all overdue pending
