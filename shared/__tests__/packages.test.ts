@@ -6,6 +6,7 @@ import {
   isRecurring,
   nextDue,
   planCycles,
+  planSummary,
 } from '../packages';
 import { computeDoctorEarnings, settlementLabel } from '../commission';
 import { installmentStatus } from '../money';
@@ -178,5 +179,45 @@ describe('doctor settlement', () => {
     const e = computeDoctorEarnings({ id: 'doc1' }, visits, [], [], range);
     expect(e.doctorShare).toBe(0);
     expect(e.clinicShare).toBe(4000);
+  });
+});
+
+describe('a payment plan the clinic sets itself', () => {
+  // Rs 10,000 package, Rs 2,000 paid up front, then whatever dates were agreed.
+  const total = 10000;
+  const paid = 2000;
+
+  it('says when the plan covers the balance exactly', () => {
+    const plan = planSummary(total, paid, [
+      { amount: 4000, paidDate: null },
+      { amount: 4000, paidDate: null },
+    ]);
+    expect(plan.balance).toBe(8000);
+    expect(plan.scheduled).toBe(8000);
+    expect(plan.unscheduled).toBe(0);
+    expect(plan.over).toBe(0);
+  });
+
+  it('says how much still has no date', () => {
+    const plan = planSummary(total, paid, [{ amount: 4000, paidDate: null }]);
+    expect(plan.unscheduled).toBe(4000);
+  });
+
+  it('says when more has been scheduled than is owed', () => {
+    const plan = planSummary(total, paid, [
+      { amount: 5000, paidDate: null },
+      { amount: 5000, paidDate: null },
+    ]);
+    expect(plan.over).toBe(2000);
+  });
+
+  it('ignores installments already paid', () => {
+    const plan = planSummary(total, 6000, [
+      { amount: 4000, paidDate: '2026-09-20' },
+      { amount: 4000, paidDate: null },
+    ]);
+    expect(plan.balance).toBe(4000);
+    expect(plan.scheduled).toBe(4000);
+    expect(plan.unscheduled).toBe(0);
   });
 });

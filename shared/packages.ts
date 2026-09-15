@@ -140,3 +140,42 @@ export function dueLabel(due: DueReminder): string {
   if (due.daysAway === -1) return '1 day overdue';
   return `${Math.abs(due.daysAway)} days overdue`;
 }
+
+export interface PlanSummary {
+  /** What the patient still owes on this package. */
+  balance: number;
+  /** How much of that has a date against it. */
+  scheduled: number;
+  /** Owed, but with no date set yet. */
+  unscheduled: number;
+  /** Scheduled beyond what is owed — usually a plan that was edited twice. */
+  over: number;
+}
+
+/**
+ * Does the payment plan add up?
+ *
+ * The clinic decides the dates and the amounts: an advance now, then whatever the patient can
+ * manage, whenever they agreed to. That freedom is only safe if the screen says plainly whether
+ * the instalments cover the balance, fall short, or overshoot it.
+ */
+export function planSummary(
+  totalFee: number,
+  paid: number,
+  installments: { amount: number; paidDate?: string | null }[]
+): PlanSummary {
+  const balance = Math.max(0, round2(totalFee - paid));
+  const scheduled = round2(
+    installments.filter((i) => !i.paidDate).reduce((sum, i) => sum + i.amount, 0)
+  );
+  return {
+    balance,
+    scheduled,
+    unscheduled: Math.max(0, round2(balance - scheduled)),
+    over: Math.max(0, round2(scheduled - balance)),
+  };
+}
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}

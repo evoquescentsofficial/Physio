@@ -580,6 +580,11 @@ function handle(method: string, path: string, params: any, body: any): any {
           inst.paymentId = null;
           inst.paidDate = null;
         }
+        // A paid installment whose amount is edited moves its payment with it.
+        if (inst.paymentId && body.amount !== undefined) {
+          const linked = db.payments.find((y) => y.id === inst.paymentId);
+          if (linked) linked.amount = body.amount;
+        }
         persist();
         return inst;
       }

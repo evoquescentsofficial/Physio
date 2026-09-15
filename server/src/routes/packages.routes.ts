@@ -368,6 +368,12 @@ router.put(
         paymentId = null;
       }
 
+      // Editing the amount of an installment that is already paid has to move the payment
+      // with it, otherwise the row says one thing and the day's takings say another.
+      if (paymentId && data.amount !== undefined && data.amount !== existing.amount) {
+        await tx.payment.update({ where: { id: paymentId }, data: { amount: data.amount } });
+      }
+
       return tx.installment.update({
         where: { id: existing.id },
         data: {
