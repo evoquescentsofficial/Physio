@@ -93,11 +93,26 @@ export default function Patients() {
     await load();
   }
 
+  /**
+   * True when this row is in the results because of the attendant rather than the patient —
+   * worth showing, otherwise a search for "Raza Ahmed" returns a list of other people's names.
+   */
+  function matchedOnAttendant(p: Patient) {
+    const needle = q.trim().toLowerCase();
+    if (!needle || !p.attendantName) return false;
+    if (p.name.toLowerCase().includes(needle)) return false;
+    return p.attendantName.toLowerCase().includes(needle);
+  }
+
   return (
     <div>
       <PageHeader
         title="Patients"
-        subtitle={`${patients.length} patient${patients.length === 1 ? '' : 's'} registered`}
+        subtitle={
+          q.trim()
+            ? `${patients.length} match${patients.length === 1 ? '' : 'es'} for “${q.trim()}”`
+            : `${patients.length} patient${patients.length === 1 ? '' : 's'} registered`
+        }
         actions={
           <button className="btn-primary" onClick={openNew}>
             + Add Patient
@@ -108,7 +123,7 @@ export default function Patients() {
       <Card className="mb-4 p-4">
         <input
           className="input"
-          placeholder="Search by name, phone or email…"
+          placeholder="Search by patient name, attendant, phone or email…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -141,6 +156,10 @@ export default function Patients() {
                         {p.name}
                       </Link>
                       {p.gender && <div className="text-xs text-ink-400">{p.gender}</div>}
+                      {matchedOnAttendant(p) && (
+                        // Say why a patient nobody searched for by name is in the results.
+                        <div className="text-xs text-ink-500">with {p.attendantName}</div>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-ink-600">{p.phone}</td>
                     <td className="px-5 py-3 text-ink-600">{p.email || '—'}</td>
@@ -187,6 +206,17 @@ export default function Patients() {
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
+            />
+          </Field>
+          <Field
+            label="Attendant name (optional)"
+            hint="Whoever brings the patient in — a family member, a carer, a driver. Searching finds the patient by this name too."
+          >
+            <input
+              className="input"
+              value={form.attendantName}
+              onChange={(e) => setForm({ ...form, attendantName: e.target.value })}
+              placeholder="Leave blank if they come alone"
             />
           </Field>
           <Field label="Phone">
@@ -244,17 +274,6 @@ export default function Patients() {
               className="input"
               value={form.referredBy}
               onChange={(e) => setForm({ ...form, referredBy: e.target.value })}
-            />
-          </Field>
-          <Field
-            label="Attendant name (optional)"
-            hint="Whoever brings the patient in — a family member, a carer, a driver."
-          >
-            <input
-              className="input"
-              value={form.attendantName}
-              onChange={(e) => setForm({ ...form, attendantName: e.target.value })}
-              placeholder="Leave blank if they come alone"
             />
           </Field>
           <Field label="Emergency contact">

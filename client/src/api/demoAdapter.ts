@@ -251,7 +251,8 @@ function handle(method: string, path: string, params: any, body: any): any {
             !q ||
             p.name.toLowerCase().includes(q) ||
             p.phone.includes(q) ||
-            (p.email || '').toLowerCase().includes(q)
+            (p.email || '').toLowerCase().includes(q) ||
+            (p.attendantName || '').toLowerCase().includes(q)
         )
         .slice()
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))

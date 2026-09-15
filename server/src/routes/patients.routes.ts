@@ -55,6 +55,9 @@ router.get(
               { name: { contains: q } },
               { phone: { contains: q } },
               { email: { contains: q } },
+              // Staff often remember the son or the driver who books the appointments
+              // rather than the patient themselves, so the attendant is searchable too.
+              { attendantName: { contains: q } },
             ],
           }
         : undefined,

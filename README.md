@@ -10,9 +10,11 @@ Amounts are shown in Pakistani Rupees (Rs).
 **Patients**
 - Add / edit / delete patients with full contact and medical details (phone, email, DOB, gender,
   blood group, occupation, referred by, attendant, emergency contact, address, notes)
-- **Attendant** records whoever brings the patient in — a family member, a carer, a driver. It is
-  optional, since plenty of patients come alone, and it shows on the patient's overview
-- Live search by name, phone or email
+- **Attendant** records whoever brings the patient in — a family member, a carer, a driver. It
+  sits beside the patient's name on the form and is optional, since plenty come alone
+- Live search by patient name, attendant, phone or email — staff often remember the son who books
+  the appointments rather than the patient, so typing his name finds them, and the row shows which
+  attendant matched
 - Per-patient summary: package value, total paid, balance due, session progress
 
 **Diagnoses & treatment**

@@ -1,3 +1,6 @@
+// Run straight through tsx, so unlike the API it has to load .env itself — without this
+// `npm run db:seed` fails on a fresh install with "Environment variable not found: DATABASE_URL".
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
