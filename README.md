@@ -80,8 +80,9 @@ prints on A4 as the same sheet the clinic has always used.
 
 **Two kinds of fee**
 - **Checkup fee** — charged once on the patient's first visit. The patient page shows a prompt
-  until it has been recorded: one click charges the standard rate, or **Change amount** opens
-  a dialog for a family rate, a concession or a free visit
+  until it has been recorded. **Record payment** opens a dialog already filled in with the
+  standard fee, with one-tap choices for a quarter off, half off or free, so a family rate or a
+  waived visit is recorded from the same place as a full-price one
 - A discounted or waived visit records what was actually collected as the payment and what was
   given up as a discount, so revenue stays honest, the visit still appears in the patient's
   history, and the giveaway is visible in **Discounts given** on the Payments page

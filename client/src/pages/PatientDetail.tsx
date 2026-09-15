@@ -164,34 +164,20 @@ export default function PatientDetail() {
 }
 
 /**
- * First-visit checkup fee is a separate charge from session/package fees, so it gets a
- * one-click prompt that disappears once the fee has been recorded for this patient.
+ * First-visit checkup fee is a separate charge from session/package fees, so it gets a prompt
+ * that disappears once the fee has been recorded for this patient.
+ *
+ * One button, not two. There used to be a "Record Rs 1,000" that took the money the instant it
+ * was clicked, with no dialog and nothing to confirm — which reads as a broken button rather
+ * than a decisive one. Now it opens the dialog, already filled in with the standard fee, so a
+ * full-price visit is still two clicks and a discounted one is possible from the same place.
  */
 function CheckupFeeBanner({ patient, reload }: { patient: Patient; reload: () => void }) {
   const { settings } = useSettings();
-  const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const alreadyPaid = (patient.payments || []).some((p) => p.type === 'CHECKUP_FEE');
 
   if (alreadyPaid) return null;
-
-  /** Full price in one click — the common case shouldn't cost a dialog. */
-  async function recordFull() {
-    setBusy(true);
-    try {
-      await api.post('/payments', {
-        patientId: patient.id,
-        amount: settings.checkupFee,
-        discount: 0,
-        type: 'CHECKUP_FEE',
-        method: 'CASH',
-        notes: 'First visit checkup fee',
-      });
-      reload();
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <>
@@ -203,18 +189,12 @@ function CheckupFeeBanner({ patient, reload }: { patient: Patient; reload: () =>
             treatment package.
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-secondary" onClick={() => setOpen(true)}>
-            Change amount
-          </button>
-          <button
-            className="btn-primary !bg-teal-600 hover:!bg-teal-700"
-            onClick={recordFull}
-            disabled={busy}
-          >
-            {busy ? 'Recording…' : `Record ${currency(settings.checkupFee)}`}
-          </button>
-        </div>
+        <button
+          className="btn-primary !bg-teal-600 hover:!bg-teal-700"
+          onClick={() => setOpen(true)}
+        >
+          Record payment
+        </button>
       </div>
 
       {open && (
