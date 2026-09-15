@@ -5,6 +5,8 @@ import {
   frequencyForCycle,
   isRecurring,
   nextDue,
+  installmentLabel,
+  ordinal,
   planCycles,
   planSummary,
 } from '../packages';
@@ -219,5 +221,28 @@ describe('a payment plan the clinic sets itself', () => {
     expect(plan.balance).toBe(4000);
     expect(plan.scheduled).toBe(4000);
     expect(plan.unscheduled).toBe(0);
+  });
+});
+
+describe('how the payments are named', () => {
+  it('counts the way the clinic does', () => {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101].map(ordinal)).toEqual([
+      '1st',
+      '2nd',
+      '3rd',
+      '4th',
+      '11th',
+      '12th',
+      '13th',
+      '21st',
+      '22nd',
+      '23rd',
+      '101st',
+    ]);
+  });
+
+  it('names the rows of a plan', () => {
+    expect(installmentLabel(0)).toBe('1st installment');
+    expect(installmentLabel(2)).toBe('3rd installment');
   });
 });

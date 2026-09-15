@@ -14,7 +14,15 @@ import {
   formatDate,
   toInputDate,
 } from '../components/ui';
-import { Diagnosis, Doctor, Patient, Payment, TreatmentPackage, Visit } from '../types';
+import {
+  Diagnosis,
+  Doctor,
+  Installment,
+  Patient,
+  Payment,
+  TreatmentPackage,
+  Visit,
+} from '../types';
 import { useSettings } from '../context/SettingsContext';
 import PrescriptionForm from '../components/PrescriptionForm';
 import { ConditionTemplate } from '../../../shared/conditions';
@@ -35,9 +43,12 @@ import {
   cycleNoun,
   dueLabel,
   frequencyForCycle,
+  installmentLabel,
   isRecurring,
+  ordinal,
   nextDue,
   planCycles,
+  planSummary,
 } from '../../../shared/packages';
 
 type Tab = 'overview' | 'diagnoses' | 'packages' | 'sessions' | 'payments';
@@ -750,6 +761,137 @@ function SuggestPackageModal({
 }
 
 /**
+ * The payment plan: an advance, then a 1st, 2nd, 3rd installment — the way the clinic and the
+ * patient talk about it.
+ *
+ * A weekly or monthly package starts with one payment per cycle, but that is a suggestion, not
+ * a rule: every row can be moved to the date they agreed, re-priced, removed, or split by
+ * adding another. The line underneath says whether the plan still adds up to the balance, so a
+ * re-arranged plan cannot quietly lose money.
+ */
+function PaymentPlan({
+  pkg,
+  paid,
+  onMarkPaid,
+  onEdit,
+  onDelete,
+  onAdd,
+}: {
+  pkg: TreatmentPackage;
+  paid: number;
+  onMarkPaid: (id: string) => void;
+  onEdit: (inst: Installment) => void;
+  onDelete: (inst: Installment) => void;
+  onAdd: () => void;
+}) {
+  const installments = (pkg.installments || [])
+    .slice()
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const plan = planSummary(pkg.totalFee, paid, installments);
+  // The advance is a payment rather than a scheduled one, but it is the first line of the plan
+  // as far as the clinic is concerned, so it is shown as one.
+  const advance = (pkg.payments || [])
+    .filter((y) => y.type === 'ADVANCE')
+    .reduce((sum, y) => sum + y.amount, 0);
+
+  return (
+    <div className="mt-5">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-ink-400">
+          Payment plan
+        </div>
+        <button className="btn-ghost !py-1 !text-xs text-brand-600" onClick={onAdd}>
+          + Add an installment
+        </button>
+      </div>
+
+      {installments.length === 0 && advance === 0 ? (
+        <p className="rounded-lg bg-ink-50 px-4 py-3 text-sm text-ink-500">
+          No dates set yet. {currency(plan.balance)} is owed — add an installment to agree a plan.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase text-ink-400">
+              <tr>
+                <th className="py-2">Payment</th>
+                <th className="py-2">Due date</th>
+                <th className="py-2">Amount</th>
+                <th className="py-2">Status</th>
+                <th className="py-2 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink-100">
+              {advance > 0 && (
+                <tr>
+                  <td className="py-2 font-medium text-ink-800">Advance</td>
+                  <td className="py-2 text-ink-700">{formatDate(pkg.startDate)}</td>
+                  <td className="py-2 text-ink-700">{currency(advance)}</td>
+                  <td className="py-2">
+                    <Badge value="PAID" />
+                  </td>
+                  <td className="py-2 text-right text-xs text-ink-400">Taken at the start</td>
+                </tr>
+              )}
+              {installments.map((inst, i) => (
+                <tr key={inst.id}>
+                  <td className="py-2 font-medium text-ink-800">{installmentLabel(i)}</td>
+                  <td className="py-2 text-ink-700">{formatDate(inst.dueDate)}</td>
+                  <td className="py-2 text-ink-700">{currency(inst.amount)}</td>
+                  <td className="py-2">
+                    <Badge value={installmentStatus(inst)} />
+                  </td>
+                  <td className="whitespace-nowrap py-2 text-right">
+                    {inst.status !== 'PAID' && (
+                      <button
+                        className="btn-ghost !py-1 text-brand-600"
+                        onClick={() => onMarkPaid(inst.id)}
+                      >
+                        Mark paid
+                      </button>
+                    )}
+                    <IconButton
+                      icon="edit"
+                      label="Change this date or amount"
+                      onClick={() => onEdit(inst)}
+                    />
+                    <IconButton
+                      icon="trash"
+                      label="Remove this installment"
+                      tone="danger"
+                      onClick={() => onDelete(inst)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Does the plan cover what is owed? */}
+      {plan.balance > 0 && plan.unscheduled > 0 && installments.length > 0 && (
+        <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <span className="font-semibold">{currency(plan.unscheduled)}</span> of the{' '}
+          {currency(plan.balance)} balance has no date yet.
+        </p>
+      )}
+      {plan.over > 0 && (
+        <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          The plan adds up to <span className="font-semibold">{currency(plan.over)}</span> more
+          than the {currency(plan.balance)} still owed.
+        </p>
+      )}
+      {plan.balance > 0 && plan.unscheduled === 0 && plan.over === 0 && installments.length > 0 && (
+        <p className="mt-2 text-xs text-emerald-700">
+          The plan covers the full {currency(plan.balance)} balance.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
  * The next payment this package is waiting on. A monthly package quietly falls due every
  * month, so it has to say so on the record rather than only in a report nobody opens.
  */
@@ -796,6 +938,9 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
   const [carryFor, setCarryFor] = useState<TreatmentPackage | null>(null);
   const [extendFor, setExtendFor] = useState<TreatmentPackage | null>(null);
   const [confirmingPkg, setConfirmingPkg] = useState<TreatmentPackage | null>(null);
+  // The plan is the clinic's to arrange, so every row of it can be changed or removed.
+  const [editingInst, setEditingInst] = useState<Installment | null>(null);
+  const [confirmingInst, setConfirmingInst] = useState<Installment | null>(null);
   const emptyForm = {
     title: '',
     diagnosisId: '',
@@ -847,8 +992,9 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
     setForm((f) => ({
       ...f,
       billingCycle,
-      // A cyclic package pays per cycle, so the one-off advance/installment plan does not apply.
-      installmentCount: isRecurring(billingCycle) ? 0 : 3,
+      // One payment per cycle is the starting suggestion; the clinic can ask for a different
+      // number, and can move every date and amount once the package exists.
+      installmentCount: isRecurring(billingCycle) ? Number(f.cycles) : 3,
       scheduleFrequencyDays: isRecurring(billingCycle)
         ? frequencyForCycle(billingCycle, Number(f.sessionsPerCycle))
         : 2,
@@ -893,6 +1039,23 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
 
   async function markInstallmentPaid(instId: string) {
     await api.put(`/packages/installments/${instId}`, { status: 'PAID' });
+    reload();
+  }
+
+  /** The same name the plan shows, for dialogs that talk about one row. */
+  function labelFor(inst: Installment | null) {
+    if (!inst) return 'installment';
+    const pkg = patient.packages?.find((k) => k.id === inst.packageId);
+    const rows = (pkg?.installments || [])
+      .slice()
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    const index = rows.findIndex((r) => r.id === inst.id);
+    return index >= 0 ? installmentLabel(index) : 'installment';
+  }
+
+  async function removeInstallment(inst: Installment) {
+    await api.delete(`/packages/installments/${inst.id}`);
+    setConfirmingInst(null);
     reload();
   }
 
@@ -998,46 +1161,14 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                   </div>
                 </div>
 
-                {!!p.installments?.length && (
-                  <div className="mt-5">
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-400">
-                      Installments
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="text-left text-xs uppercase text-ink-400">
-                          <tr>
-                            <th className="py-2">Due date</th>
-                            <th className="py-2">Amount</th>
-                            <th className="py-2">Status</th>
-                            <th className="py-2 text-right">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-ink-100">
-                          {p.installments.map((inst) => (
-                            <tr key={inst.id}>
-                              <td className="py-2 text-ink-700">{formatDate(inst.dueDate)}</td>
-                              <td className="py-2 text-ink-700">{currency(inst.amount)}</td>
-                              <td className="py-2">
-                                <Badge value={installmentStatus(inst)} />
-                              </td>
-                              <td className="py-2 text-right">
-                                {inst.status !== 'PAID' && (
-                                  <button
-                                    className="btn-ghost !py-1 text-brand-600"
-                                    onClick={() => markInstallmentPaid(inst.id)}
-                                  >
-                                    Mark paid
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
+                <PaymentPlan
+                  pkg={p}
+                  paid={paid}
+                  onMarkPaid={markInstallmentPaid}
+                  onEdit={setEditingInst}
+                  onDelete={setConfirmingInst}
+                  onAdd={() => setInstFor(p)}
+                />
               </Card>
             );
           })}
@@ -1138,7 +1269,15 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                   min={1}
                   max={52}
                   value={form.cycles}
-                  onChange={(e) => setForm({ ...form, cycles: Math.max(1, Number(e.target.value)) })}
+                  onChange={(e) => {
+                    const cycles = Math.max(1, Number(e.target.value));
+                    setForm((f) => ({
+                      ...f,
+                      cycles,
+                      // Follow the cycles unless the clinic has already chosen its own number.
+                      installmentCount: f.installmentCount === f.cycles ? cycles : f.installmentCount,
+                    }));
+                  }}
                   required
                 />
               </Field>
@@ -1197,19 +1336,25 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
               <option value="OTHER">Other</option>
             </select>
           </Field>
-          {/* A weekly or monthly package already has its own schedule of payments. */}
-          {!recurring && (
-            <Field label="Remaining paid in how many installments?">
-              <input
-                className="input"
-                type="number"
-                min={0}
-                value={form.installmentCount}
-                onChange={(e) => setForm({ ...form, installmentCount: Number(e.target.value) })}
-                placeholder="0 = no installments"
-              />
-            </Field>
-          )}
+          <Field
+            label="Remaining paid in how many installments?"
+            hint={
+              recurring
+                ? `Leave it at ${form.cycles} for one payment per ${cycleNoun(
+                    form.billingCycle
+                  )}, or set your own number. Every date and amount can be changed afterwards.`
+                : undefined
+            }
+          >
+            <input
+              className="input"
+              type="number"
+              min={0}
+              value={form.installmentCount}
+              onChange={(e) => setForm({ ...form, installmentCount: Number(e.target.value) })}
+              placeholder="0 = no installments"
+            />
+          </Field>
           <div className="rounded-lg bg-brand-50 p-4 sm:col-span-2">
             <label className="flex items-center gap-2 text-sm font-medium text-ink-800">
               <input
@@ -1277,7 +1422,7 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                 their next package automatically.
               </div>
             )}
-            {recurring && cyclePlan && (
+            {recurring && cyclePlan && form.installmentCount === Number(form.cycles) && (
               <div className="mt-2 rounded bg-white px-3 py-2 text-xs text-ink-600">
                 {cyclePlan.installments.length} payments of{' '}
                 <span className="font-semibold text-ink-900">{currency(Number(form.cycleFee))}</span>
@@ -1286,8 +1431,16 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                 {formatDate(
                   cyclePlan.installments[cyclePlan.installments.length - 1].dueDate.toISOString()
                 )}
-                . The patient page shows the next one due, and it appears on the dashboard
-                reminder list as the date approaches.
+                . Change any of them on the package afterwards.
+              </div>
+            )}
+            {recurring && form.installmentCount > 0 && form.installmentCount !== Number(form.cycles) && balance > 0 && (
+              <div className="mt-2 rounded bg-white px-3 py-2 text-xs text-ink-600">
+                Advance of {currency(form.advanceAmount)} now, then {form.installmentCount}{' '}
+                installments of about{' '}
+                <span className="font-semibold text-ink-900">{currency(perInstallment)}</span>, one
+                every {cycleNoun(form.billingCycle)}. Set the exact dates and amounts on the
+                package once it is created.
               </div>
             )}
             {!recurring && form.installmentCount > 0 && balance > 0 && (
@@ -1335,6 +1488,29 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
         reload={reload}
       />
       <InstallmentModal pkg={instFor} onClose={() => setInstFor(null)} reload={reload} />
+      <EditInstallmentModal
+        inst={editingInst}
+        label={labelFor(editingInst)}
+        onClose={() => setEditingInst(null)}
+        reload={reload}
+      />
+      <ConfirmDialog
+        open={!!confirmingInst}
+        title={`Remove the ${labelFor(confirmingInst)}?`}
+        message={
+          <>
+            The {currency(confirmingInst?.amount || 0)} due on{' '}
+            {formatDate(confirmingInst?.dueDate)} comes off the plan, and the ones after it move
+            up a number.
+            {confirmingInst?.status === 'PAID'
+              ? ' It is marked paid, so the payment it recorded is removed too and the money comes off the patient’s total.'
+              : ' What the patient owes does not change — only the date it was expected on.'}
+          </>
+        }
+        confirmLabel="Remove"
+        onCancel={() => setConfirmingInst(null)}
+        onConfirm={() => removeInstallment(confirmingInst!)}
+      />
       <CarryForwardModal pkg={carryFor} onClose={() => setCarryFor(null)} reload={reload} />
     </div>
   );
@@ -1529,6 +1705,21 @@ function InstallmentModal({
   const [amount, setAmount] = useState(0);
   const [dueDate, setDueDate] = useState(toInputDate(new Date()));
 
+  // Whatever is owed but has no date against it is the obvious amount to offer.
+  const plan = pkg
+    ? planSummary(pkg.totalFee, sumPayments(pkg.payments || []), pkg.installments || [])
+    : null;
+  const nextNumber = (pkg?.installments?.length || 0) + 1;
+
+  useEffect(() => {
+    if (pkg && plan) {
+      setAmount(plan.unscheduled);
+      setDueDate(toInputDate(new Date()));
+    }
+    // Only re-fill when a different package is opened, never while typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pkg?.id]);
+
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!pkg) return;
@@ -1538,8 +1729,13 @@ function InstallmentModal({
   }
 
   return (
-    <Modal open={!!pkg} onClose={onClose} title="Add Installment">
+    <Modal open={!!pkg} onClose={onClose} title={`Add the ${ordinal(nextNumber)} installment`}>
       <form onSubmit={save} className="space-y-4">
+        {plan && plan.unscheduled > 0 && (
+          <p className="rounded-lg bg-ink-50 px-4 py-3 text-sm text-ink-600">
+            {currency(plan.unscheduled)} of the {currency(plan.balance)} balance has no date yet.
+          </p>
+        )}
         <Field label="Amount">
           <input
             className="input"
@@ -1565,6 +1761,93 @@ function InstallmentModal({
           </button>
           <button type="submit" className="btn-primary">
             Add
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Changing one row of the plan: the date the patient agreed to, or the amount they can manage.
+ * A row already paid can still be corrected — the payment it recorded moves with it.
+ */
+function EditInstallmentModal({
+  inst,
+  label,
+  onClose,
+  reload,
+}: {
+  inst: Installment | null;
+  label: string;
+  onClose: () => void;
+  reload: () => void;
+}) {
+  const [amount, setAmount] = useState(0);
+  const [dueDate, setDueDate] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (inst) {
+      setAmount(inst.amount);
+      setDueDate(toInputDate(inst.dueDate));
+      setError('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inst?.id]);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!inst) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.put(`/packages/installments/${inst.id}`, { amount: Number(amount), dueDate });
+      onClose();
+      reload();
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'That payment could not be changed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={!!inst} onClose={onClose} title={`Change the ${label}`}>
+      <form onSubmit={save} className="space-y-4">
+        <Field label="Amount">
+          <input
+            className="input"
+            type="number"
+            min={0}
+            value={amount}
+            onChange={(e) => setAmount(Number(e.target.value))}
+            required
+          />
+        </Field>
+        <Field label="Due date">
+          <input
+            className="input"
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            required
+          />
+        </Field>
+        {inst?.status === 'PAID' && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            This one is already paid. Changing the amount moves the payment it recorded with it,
+            so the day's takings stay correct.
+          </p>
+        )}
+        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? 'Saving…' : 'Save changes'}
           </button>
         </div>
       </form>

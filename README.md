@@ -126,6 +126,21 @@ prints on A4 as the same sheet the clinic has always used.
   frequency — the original is marked `CARRIED_FORWARD` so history is never lost
 - Quick filters: today, this week, this month, all overdue pending
 
+**The payment plan**
+- Against any package the clinic records an **advance**, then a **1st, 2nd, 3rd installment** and
+  so on — the way it is actually agreed with the patient at the desk
+- A weekly or monthly package starts with **one payment per cycle** as a suggestion; ask for a
+  different number of installments and the balance is split that many ways instead
+- **Every row can be changed**: move it to the date they agreed, re-price it, remove it, or add
+  another. Rs 10,000 monthly package with Rs 2,000 advance, then Rs 4,000 on the 20th and
+  Rs 4,000 on the 25th, is three edits
+- The plan says whether it still adds up: *"Rs 4,000 of the Rs 8,000 balance has no date yet"*,
+  or that it covers the balance in full
+- Editing an installment already marked paid moves the payment it recorded with it, so the
+  plan and the day's takings can never disagree
+- None of this changes what the patient owes — the totals, revenue and P&L come from the package
+  fee and the payments actually taken. The plan only says *when the money is expected*
+
 **Payment reminders**
 - Every package shows **the next payment due** on the record: the amount, the date, and whether
   it is due today, due in n days, or n days overdue

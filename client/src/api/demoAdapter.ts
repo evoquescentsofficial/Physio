@@ -9,7 +9,7 @@ import type { AxiosAdapter, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { buildDemoDb } from './demoData';
 import { DemoDb } from './demoTypes';
 import { accountPosition, installmentStatus, netAmount, splitInstallments } from '../../../shared/money';
-import { frequencyForCycle, isRecurring, planCycles } from '../../../shared/packages';
+import { addCycles, frequencyForCycle, isRecurring, planCycles } from '../../../shared/packages';
 import { computeDoctorEarnings, salaryPeriod, salaryTag } from '../../../shared/commission';
 
 // Bump when the stored shape changes, so browsers holding an older demo database
@@ -731,7 +731,7 @@ function handle(method: string, path: string, params: any, body: any): any {
             paymentId: null,
           });
         }
-      } else if (cyclePlan) {
+      } else if (cyclePlan && !(count > 0 && count !== cyclePlan.installments.length)) {
         // One payment per cycle: the row of due dates the reminders run off.
         let remaining = advance;
         cyclePlan.installments.forEach(({ amount, dueDate }) => {
@@ -743,6 +743,20 @@ function handle(method: string, path: string, params: any, body: any): any {
             packageId: pkg.id,
             amount: amount - covered,
             dueDate: dueDate.toISOString(),
+            paidDate: null,
+            status: 'PENDING',
+            notes: null,
+            paymentId: null,
+          });
+        });
+      } else if (cyclePlan && count > 0 && totalFee - advance > 0) {
+        // The clinic asked for its own number of installments instead of one per cycle.
+        splitInstallments(totalFee - advance, count).forEach((amount, i) => {
+          db.installments.push({
+            id: newId('ins_'),
+            packageId: pkg.id,
+            amount,
+            dueDate: addCycles(startDate, cycle, i + 1).toISOString(),
             paidDate: null,
             status: 'PENDING',
             notes: null,

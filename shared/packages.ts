@@ -179,3 +179,23 @@ export function planSummary(
 function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
+
+/** 1st, 2nd, 3rd, 4th… — how the clinic and the patient count the payments. */
+export function ordinal(n: number): string {
+  const suffix =
+    n % 100 >= 11 && n % 100 <= 13
+      ? 'th'
+      : n % 10 === 1
+        ? 'st'
+        : n % 10 === 2
+          ? 'nd'
+          : n % 10 === 3
+            ? 'rd'
+            : 'th';
+  return `${n}${suffix}`;
+}
+
+/** "1st installment", "2nd installment" — the name of a row in the payment plan. */
+export function installmentLabel(index: number): string {
+  return `${ordinal(index + 1)} installment`;
+}

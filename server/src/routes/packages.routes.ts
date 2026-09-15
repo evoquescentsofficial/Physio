@@ -4,7 +4,13 @@ import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { splitInstallments } from '../../../shared/money';
-import { BILLING_CYCLES, frequencyForCycle, isRecurring, planCycles } from '../../../shared/packages';
+import {
+  BILLING_CYCLES,
+  addCycles,
+  frequencyForCycle,
+  isRecurring,
+  planCycles,
+} from '../../../shared/packages';
 
 const router = Router();
 router.use(requireAuth);
@@ -105,6 +111,8 @@ router.post(
     const advanceAmount = data.advanceAmount ?? 0;
     const installmentCount = data.installmentCount ?? 0;
 
+    const balanceAfterAdvance = Math.max(totalFee - advanceAmount, 0);
+
     // Explicit installments win; otherwise split the balance after the advance evenly,
     // giving the last installment any rounding remainder so the parts sum to the balance.
     let installmentPlan = data.installments?.map((i) => ({
@@ -112,9 +120,14 @@ router.post(
       dueDate: new Date(i.dueDate),
     }));
 
-    // A cyclic package bills once per cycle: that row of due dates is what the payment
-    // reminders run off, so it is generated unless the caller supplied its own schedule.
-    if (!installmentPlan && cyclePlan) {
+    // A cyclic package bills once per cycle by default, and that row of due dates is what the
+    // payment reminders run off. The clinic can say "split it into N instead" — an advance now
+    // and three installments, say — in which case the balance is split N ways at the same
+    // rhythm. Either way the dates are a starting point and can be changed afterwards.
+    const wantsOwnPlan =
+      installmentCount > 0 && cyclePlan && installmentCount !== cyclePlan.installments.length;
+
+    if (!installmentPlan && cyclePlan && !wantsOwnPlan) {
       let remainingAdvance = advanceAmount;
       installmentPlan = cyclePlan.installments
         .map(({ amount, dueDate }) => {
@@ -123,9 +136,11 @@ router.post(
           return { amount: amount - covered, dueDate };
         })
         .filter((i) => i.amount > 0);
+    } else if (!installmentPlan && cyclePlan && wantsOwnPlan && balanceAfterAdvance > 0) {
+      installmentPlan = splitInstallments(balanceAfterAdvance, installmentCount).map(
+        (amount, idx) => ({ amount, dueDate: addCycles(startDate, cycle, idx + 1) })
+      );
     }
-
-    const balanceAfterAdvance = Math.max(totalFee - advanceAmount, 0);
 
     // Nothing left to owe (advance covered or exceeded the total) means no installments —
     // otherwise the package would be given a schedule of zero-rupee payments.
