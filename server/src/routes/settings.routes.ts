@@ -38,9 +38,15 @@ const settingsSchema = z.object({
   diagnosisOptions: z.array(z.string()).optional().nullable(),
   exerciseOptions: z.array(z.string()).optional().nullable(),
   modalityOptions: z.array(z.string()).optional().nullable(),
+  departmentOptions: z.array(z.string()).optional().nullable(),
 });
 
-const LIST_FIELDS = ['diagnosisOptions', 'exerciseOptions', 'modalityOptions'] as const;
+const LIST_FIELDS = [
+  'diagnosisOptions',
+  'exerciseOptions',
+  'modalityOptions',
+  'departmentOptions',
+] as const;
 
 /** Lists are arrays on the wire and JSON text in the column; nowhere else needs to know. */
 function fromRow<T extends Record<string, any>>(row: T) {
@@ -49,6 +55,7 @@ function fromRow<T extends Record<string, any>>(row: T) {
     diagnosisOptions: parseList(row.diagnosisOptions),
     exerciseOptions: parseList(row.exerciseOptions),
     modalityOptions: parseList(row.modalityOptions),
+    departmentOptions: parseList(row.departmentOptions),
   };
 }
 

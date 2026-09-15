@@ -3,17 +3,21 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ADMIN_ONLY, FINANCE, requireAuth } from '../middleware/auth';
+import { EXPENSE_CATEGORIES } from '../../../shared/money';
 
 const router = Router();
 router.use(requireAuth);
 
 const expenseSchema = z.object({
-  category: z.enum(['SALARY', 'RENT', 'UTILITIES', 'EQUIPMENT', 'MARKETING', 'MAINTENANCE', 'OTHER']),
+  category: z.enum(EXPENSE_CATEGORIES),
   title: z.string().min(1),
   amount: z.number().positive(),
   date: z.string().optional(),
   paidTo: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  // Salaries and commission settlements are paid to a doctor, and have to be traceable back
+  // to them: it is what "how much have we already paid them" is answered from.
+  doctorId: z.string().optional().nullable(),
 });
 
 // Staff costs and rent are the owner's business, not the front desk's.
@@ -31,6 +35,7 @@ router.get(
             : undefined,
       },
       orderBy: { date: 'desc' },
+      include: { doctor: { select: { id: true, name: true } } },
     });
     res.json(expenses);
   })

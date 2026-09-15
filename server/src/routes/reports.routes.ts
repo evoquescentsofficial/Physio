@@ -102,6 +102,58 @@ function monthLabel(key: string) {
   return new Date(y, m - 1, 1).toLocaleString('default', { month: 'short', year: '2-digit' });
 }
 
+/**
+ * Payments that are due — the reminder list the front desk works from. Anything already
+ * overdue, plus whatever falls due in the next `days` (a week by default), so a patient can
+ * be reminded before they arrive rather than chased afterwards.
+ */
+router.get(
+  '/due-payments',
+  asyncHandler(async (req, res) => {
+    const days = Math.max(0, Math.min(90, Number(req.query.days) || 7));
+    const horizon = new Date();
+    horizon.setHours(23, 59, 59, 999);
+    horizon.setDate(horizon.getDate() + days);
+
+    const installments = await prisma.installment.findMany({
+      where: { paidDate: null, dueDate: { lte: horizon } },
+      orderBy: { dueDate: 'asc' },
+      include: {
+        package: {
+          select: {
+            id: true,
+            title: true,
+            billingCycle: true,
+            patient: { select: { id: true, name: true, phone: true } },
+          },
+        },
+      },
+    });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    res.json(
+      installments.map((i) => {
+        const due = new Date(i.dueDate);
+        due.setHours(0, 0, 0, 0);
+        const daysAway = Math.round((due.getTime() - today.getTime()) / 86400000);
+        return {
+          id: i.id,
+          amount: i.amount,
+          dueDate: i.dueDate,
+          daysAway,
+          overdue: daysAway < 0,
+          packageId: i.package.id,
+          packageTitle: i.package.title,
+          billingCycle: i.package.billingCycle,
+          patient: i.package.patient,
+        };
+      })
+    );
+  })
+);
+
 router.get(
   '/dashboard',
   asyncHandler(async (_req, res) => {
@@ -139,6 +191,26 @@ router.get(
     const outstandingDues = accounts.reduce((s, a) => s + a.due, 0);
     const patientCredits = accounts.reduce((s, a) => s + a.credit, 0);
 
+    // Payments falling due in the coming week, so they can be collected rather than chased.
+    const horizon = new Date(now);
+    horizon.setDate(horizon.getDate() + 7);
+    horizon.setHours(23, 59, 59, 999);
+    const dueSoon = await prisma.installment.findMany({
+      where: { paidDate: null, dueDate: { lte: horizon } },
+      orderBy: { dueDate: 'asc' },
+      take: 8,
+      include: {
+        package: {
+          select: {
+            id: true,
+            title: true,
+            billingCycle: true,
+            patient: { select: { id: true, name: true, phone: true } },
+          },
+        },
+      },
+    });
+
     res.json({
       totalPatients,
       activePackages,
@@ -149,6 +221,16 @@ router.get(
       monthProfit: monthRevenue - monthExpenseTotal,
       outstandingDues,
       patientCredits,
+      duePayments: dueSoon.map((i) => ({
+        id: i.id,
+        amount: i.amount,
+        dueDate: i.dueDate,
+        overdue: new Date(i.dueDate) < startOfDay,
+        packageId: i.package.id,
+        packageTitle: i.package.title,
+        billingCycle: i.package.billingCycle,
+        patient: i.package.patient,
+      })),
     });
   })
 );

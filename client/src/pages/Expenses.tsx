@@ -16,6 +16,7 @@ import { Expense, ExpenseCategory } from '../types';
 
 const categories: ExpenseCategory[] = [
   'SALARY',
+  'COMMISSION',
   'RENT',
   'UTILITIES',
   'EQUIPMENT',

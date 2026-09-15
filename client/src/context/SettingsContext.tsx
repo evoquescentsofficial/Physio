@@ -18,6 +18,8 @@ export interface ClinicSettings {
   diagnosisOptions?: string[];
   exerciseOptions?: string[];
   modalityOptions?: string[];
+  /** The clinic's departments. Empty means "use the standard list". */
+  departmentOptions?: string[];
 }
 
 const fallback: ClinicSettings = {

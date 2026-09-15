@@ -114,8 +114,15 @@ model Attachment {
 }
 
 // status: ACTIVE | COMPLETED | CANCELLED
+// billingCycle: ONE_TIME | WEEKLY | MONTHLY — a weekly or monthly package is stored as an
+// ordinary package (sessions x fee) plus one installment per cycle, so every existing money
+// rule keeps working; the cycle is what the clinic talks about and what reminders run off.
 model TreatmentPackage {
   id            String     @id @default(cuid())
+  billingCycle    String   @default("ONE_TIME")
+  sessionsPerCycle Int?
+  cycleFee        Float?
+  cycles          Int?
   patientId     String
   patient       Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
   diagnosisId   String?
@@ -206,6 +213,10 @@ model Payment {
   method    String            @default("CASH")
   date      DateTime          @default(now())
   notes     String?
+  // Normally the front desk takes the money. When a commission doctor takes it at the chair
+  // they are holding the clinic's share, which is what the settlement has to work out.
+  collectedByDoctorId String?
+  collectedByDoctor   Doctor? @relation(fields: [collectedByDoctorId], references: [id], onDelete: SetNull)
   createdAt DateTime          @default(now())
 
   installment Installment?
@@ -230,11 +241,21 @@ model Doctor {
   // The credentials block printed beside the logo, one line each, exactly as on the pad.
   credentials     String?
   onLetterhead    Boolean   @default(false)
+  // Which parts of the clinic they work in, as a JSON array of department names.
+  departments     String?
+  // employmentType: SALARIED | COMMISSION
+  // A salaried doctor draws monthlySalary, posted to expenses each month. A commission
+  // doctor keeps commissionPercent of what their sessions bill and the rest is the clinic's.
+  employmentType  String    @default("SALARIED")
+  monthlySalary   Float?
+  commissionPercent Float?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   visits    Visit[]
   diagnoses Diagnosis[]
+  expenses  Expense[]
+  collected Payment[]
 }
 
 // Single-row table (id is always "clinic") holding clinic-wide defaults.
@@ -258,11 +279,14 @@ model ClinicSettings {
   diagnosisOptions String?
   exerciseOptions  String?
   modalityOptions  String?
+  // The clinic's departments, as a JSON array. Empty means "use the standard list".
+  departmentOptions String?
 
   updatedAt DateTime @updatedAt
 }
 
 // category: SALARY | RENT | UTILITIES | EQUIPMENT | MARKETING | MAINTENANCE | OTHER
+// category: SALARY | COMMISSION | RENT | UTILITIES | EQUIPMENT | MARKETING | MAINTENANCE | OTHER
 model Expense {
   id        String   @id @default(cuid())
   category  String
@@ -271,5 +295,12 @@ model Expense {
   date      DateTime @default(now())
   paidTo    String?
   notes     String?
+  // Set when the money went to a doctor — a salary or a commission settlement. It is what
+  // makes "what have we already paid them" answerable without matching on names.
+  doctorId  String?
+  doctor    Doctor?  @relation(fields: [doctorId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
+
+  @@index([doctorId])
+  @@index([date])
 }

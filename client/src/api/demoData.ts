@@ -5,6 +5,8 @@
  * Uses a fixed-seed pseudo-random generator so every visitor sees the same numbers.
  */
 import { DemoDb } from './demoTypes';
+import { DEFAULT_DEPARTMENTS } from '../../../shared/commission';
+import { planCycles } from '../../../shared/packages';
 import {
   DEFAULT_DIAGNOSIS_OPTIONS,
   DEFAULT_EXERCISE_OPTIONS,
@@ -219,6 +221,7 @@ export function buildDemoDb(): DemoDb {
       diagnosisOptions: DEFAULT_DIAGNOSIS_OPTIONS,
       exerciseOptions: DEFAULT_EXERCISE_OPTIONS,
       modalityOptions: DEFAULT_MODALITY_OPTIONS,
+      departmentOptions: DEFAULT_DEPARTMENTS,
     },
     patients: [],
     doctors: [],
@@ -233,13 +236,29 @@ export function buildDemoDb(): DemoDb {
 
   // The last two columns are the credentials block printed on the prescription, and whether
   // this doctor appears on it at all.
-  const doctorSeed: [string, string, string, number | null, string | null][] = [
+  // name, specialization, qualification, consultation fee, credentials, departments,
+  // how they are paid, salary, commission %
+  const doctorSeed: [
+    string,
+    string,
+    string,
+    number | null,
+    string | null,
+    string[],
+    'SALARIED' | 'COMMISSION',
+    number | null,
+    number | null,
+  ][] = [
     [
       'Dr. Imran Shah',
       'Orthopaedic physiotherapy',
       'DPT, MSPT',
       1500,
       'DPT (MMDC / UHS)\nMS-OMPT (RIU)\nCertified in Dry Needling & Injection Therapy\nClinical Physiotherapist at Bakhtawar Amin Teaching Hospital',
+      ['Physiotherapy', 'Orthopaedic rehabilitation'],
+      'SALARIED',
+      90000,
+      null,
     ],
     [
       'Dr. Sana Aslam',
@@ -247,10 +266,39 @@ export function buildDemoDb(): DemoDb {
       'DPT',
       1200,
       'DPT (MMDC / UHS)\nCertified in Dry Needling & Injection Therapy\nClinical Physiotherapist at Ibn-e-Sina Hospital',
+      ['Sports injury rehabilitation', 'Physiotherapy'],
+      'SALARIED',
+      70000,
+      null,
     ],
-    ['Dr. Farhan Qureshi', 'Neurological physiotherapy', 'DPT, PhD', null, null],
+    [
+      'Dr. Farhan Qureshi',
+      'Neurological physiotherapy',
+      'DPT, PhD',
+      null,
+      null,
+      ['Neuro rehabilitation'],
+      // Sits in the clinic on his own account and keeps 70% of what his sessions bill.
+      'COMMISSION',
+      null,
+      70,
+    ],
   ];
-  doctorSeed.forEach(([name, specialization, qualification, fee, credentials], i) => {
+  doctorSeed.forEach(
+    (
+      [
+        name,
+        specialization,
+        qualification,
+        fee,
+        credentials,
+        departments,
+        employmentType,
+        monthlySalary,
+        commissionPercent,
+      ],
+      i
+    ) => {
     db.doctors.push({
       id: id('doc_'),
       name,
@@ -264,6 +312,10 @@ export function buildDemoDb(): DemoDb {
       notes: null,
       credentials,
       onLetterhead: !!credentials,
+      departments,
+      employmentType,
+      monthlySalary,
+      commissionPercent,
     });
   });
 
@@ -337,25 +389,63 @@ export function buildDemoDb(): DemoDb {
     // the two newest patients are checkup-only so far — no package yet
     if (idx >= PEOPLE.length - 2) return;
 
-    const totalSessions = [8, 10, 12][idx % 3];
-    const feePerSession = 1500;
-    const totalFee = totalSessions * feePerSession;
-    const advance = Math.round((totalFee * (0.3 + random() * 0.2)) / 500) * 500;
+    // The two most recent patients who have a course are on a monthly plan instead of a
+    // one-off package — the arrangement a clinic uses for long rehab, and what the payment
+    // reminders run off. (The last two patients are checkup-only and return before this.)
+    const monthly = idx === PEOPLE.length - 4 || idx === PEOPLE.length - 3;
+    const cyclePlan = monthly
+      ? planCycles({
+          cycle: 'MONTHLY',
+          sessionsPerCycle: 12,
+          cycleFee: 12000,
+          cycles: 3,
+          startDate: registered,
+        })
+      : null;
+
+    const totalSessions = cyclePlan ? cyclePlan.totalSessions : [8, 10, 12][idx % 3];
+    const feePerSession = cyclePlan ? cyclePlan.totalFee / cyclePlan.totalSessions : 1500;
+    const totalFee = cyclePlan ? cyclePlan.totalFee : totalSessions * feePerSession;
+    const advance = cyclePlan
+      ? 12000
+      : Math.round((totalFee * (0.3 + random() * 0.2)) / 500) * 500;
     const packageId = id('pkg_');
 
     db.packages.push({
       id: packageId,
       patientId,
       diagnosisId,
-      title: `${condition[0].split('(')[0].trim()} — ${totalSessions} sessions`,
+      title: cyclePlan
+        ? `${condition[0].split('(')[0].trim()} — monthly plan`
+        : `${condition[0].split('(')[0].trim()} — ${totalSessions} sessions`,
       totalSessions,
       feePerSession,
       totalFee,
+      billingCycle: cyclePlan ? 'MONTHLY' : 'ONE_TIME',
+      sessionsPerCycle: cyclePlan ? 12 : null,
+      cycleFee: cyclePlan ? 12000 : null,
+      cycles: cyclePlan ? 3 : null,
       startDate: registered.toISOString(),
       status: monthOffset >= 4 ? 'COMPLETED' : 'ACTIVE',
       notes: null,
       createdAt: registered.toISOString(),
     });
+
+    // A monthly plan bills once a month: the first is settled by the advance, the rest fall due.
+    if (cyclePlan) {
+      cyclePlan.installments.slice(1).forEach(({ amount, dueDate }) => {
+        db.installments.push({
+          id: id('ins_'),
+          packageId,
+          amount,
+          dueDate: dueDate.toISOString(),
+          paidDate: null,
+          status: 'PENDING',
+          notes: null,
+          paymentId: null,
+        });
+      });
+    }
 
     db.payments.push({
       id: id('pay_'),
@@ -369,10 +459,11 @@ export function buildDemoDb(): DemoDb {
       notes: 'Advance at package start',
     });
 
-    // balance split into 3 monthly installments; the ones already due are paid
-    const balance = totalFee - advance;
+    // A monthly plan already has its own row of due dates, one per cycle, created above.
+    // Only a one-off package splits the balance into installments here.
+    const balance = cyclePlan ? 0 : totalFee - advance;
     const per = Math.floor(balance / 3);
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < (cyclePlan ? 0 : 3); i++) {
       const due = new Date(registered);
       due.setMonth(due.getMonth() + i + 1);
       const amount = i === 2 ? balance - per * 2 : per;
@@ -500,6 +591,7 @@ export function buildDemoDb(): DemoDb {
         date: date.toISOString(),
         paidTo: null,
         notes: null,
+        doctorId: null,
       });
     }
   }
@@ -520,7 +612,43 @@ export function buildDemoDb(): DemoDb {
     date: monthsAgo(1, 8).toISOString(),
     paidTo: null,
     notes: null,
+    doctorId: null,
   });
+
+  // The commission doctor: last month he took some fees at the chair, and was settled up
+  // afterwards. This is what makes the settlement table on the Doctors page mean something.
+  const commissionDoctor = db.doctors.find((d) => d.employmentType === 'COMMISSION');
+  if (commissionDoctor) {
+    const hisVisits = db.visits.filter(
+      (v) => v.doctorId === commissionDoctor.id && v.attendance === 'PRESENT'
+    );
+    hisVisits.slice(0, 6).forEach((v, i) => {
+      if (i % 2) return;
+      db.payments.push({
+        id: id('pay_'),
+        patientId: v.patientId,
+        packageId: v.packageId,
+        visitId: v.id,
+        amount: v.fee,
+        type: 'SESSION_FEE',
+        method: 'CASH',
+        date: v.completedDate || v.scheduledDate,
+        notes: 'Taken at the chair',
+        collectedByDoctorId: commissionDoctor.id,
+      });
+    });
+
+    db.expenses.push({
+      id: id('exp_'),
+      category: 'COMMISSION',
+      title: `Commission — ${commissionDoctor.name}`,
+      amount: 18000,
+      date: monthsAgo(1, 28).toISOString(),
+      paidTo: commissionDoctor.name,
+      notes: 'Settlement for last month',
+      doctorId: commissionDoctor.id,
+    });
+  }
 
   return db;
 }

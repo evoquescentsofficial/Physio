@@ -60,9 +60,16 @@ prints on A4 as the same sheet the clinic has always used.
 - Screen furniture (sidebar, buttons) never reaches the paper, and the tick columns and money box
   are kept from splitting across two pages
 
-**Doctors**
+**Doctors, departments and how they are paid**
 - Add the physiotherapists working at the clinic with specialization, qualification, phone,
   email, joining date and notes
+- **Departments**: a doctor can work in more than one (physiotherapy, neuro rehab, sports
+  injury, chiropractic…). The list is editable in Settings
+- **On salary** — a fixed monthly amount. **Post salaries** on the Doctors page writes them all
+  to expenses for the chosen month in one click, dated the last day of that month. Running it
+  twice is safe: a month already posted is skipped, so nobody is ever paid twice
+- **On commission** — the doctor sits in the clinic and keeps a share of what their sessions
+  bill, say 70% theirs and 30% the clinic's
 - **Credentials** (one qualification per line) and a "show on prescription" switch decide who
   appears on the printed letterhead and what is printed under their name
 - Consultation fee is optional — leave it blank when the clinic bills per package rather
@@ -81,7 +88,16 @@ prints on A4 as the same sheet the clinic has always used.
 - **Session fee** — charged per session, either as a single paid session or inside a package.
 
 **Treatment packages & sessions**
-- Define a package: number of sessions × fee per session (total auto-calculated)
+- **Three ways to sell a course**, chosen when the package is created:
+  - **One-off** — a set number of sessions, paid as an advance plus installments
+  - **Weekly** — so many sessions a week at a weekly fee, for so many weeks
+  - **Monthly** — so many sessions a month at a monthly fee, for so many months
+- A weekly or monthly package books one payment **per cycle**: "3 a week at Rs 4,500 for 4 weeks"
+  becomes 12 sessions, Rs 18,000, and four dated payments. Underneath it is an ordinary package,
+  so every money rule, report and P&L figure keeps working unchanged (`shared/packages.ts`)
+- Sessions are spaced so the agreed number land in each cycle — 3 a week is every other day,
+  12 a month every third day
+- Define a one-off package: number of sessions × fee per session (total auto-calculated)
 - Auto-generate the full session schedule at a chosen frequency (e.g. one session every 2 days)
 - Standalone visits (initial consultation, follow-up) alongside package sessions
 - Add a run of sessions in one go: choose how many and how many days apart, and the dates,
@@ -110,6 +126,15 @@ prints on A4 as the same sheet the clinic has always used.
   frequency — the original is marked `CARRIED_FORWARD` so history is never lost
 - Quick filters: today, this week, this month, all overdue pending
 
+**Payment reminders**
+- Every package shows **the next payment due** on the record: the amount, the date, and whether
+  it is due today, due in n days, or n days overdue
+- The **dashboard opens with a "Payments due" list** — everything already overdue plus whatever
+  falls due in the next week, with the patient's phone number, so they can be reminded before
+  they arrive rather than chased afterwards
+- A payment due **today is not overdue**. Overdue starts the day after
+- `GET /api/reports/due-payments?days=7` is the same list, for any range up to 90 days
+
 **Payments**
 - Record advances, session fees, visit fees, installment payments and refunds
 - Payment methods: cash, card, mobile wallet, bank transfer, other
@@ -124,7 +149,8 @@ prints on A4 as the same sheet the clinic has always used.
 - Add installments individually too; due dates, paid dates and automatic overdue highlighting
 
 **Expenses**
-- Salaries, rent, utilities, equipment, marketing, maintenance and other categories
+- Salaries, commission payouts, rent, utilities, equipment, marketing, maintenance and other
+  categories. Salaries and commission settlements are linked to the doctor they were paid to
 - Filter by date range and category, with per-category totals
 
 **Reports**
@@ -141,6 +167,7 @@ prints on A4 as the same sheet the clinic has always used.
 - Default checkup fee and default session fee, so staff type less
 - Everything printed on the prescription: its heading, the clinic's timings, website and
   Instagram, and the contents of all three tick-box columns
+- The clinic's list of departments
 
 **Access control**
 - JWT authentication with Admin / Doctor / Receptionist roles
@@ -150,6 +177,26 @@ prints on A4 as the same sheet the clinic has always used.
 - Sign-in is rate limited (10 attempts per 15 minutes), and `/auth/me` reads the database
   rather than the token, so a role change or a closed account takes effect immediately
 - Password change endpoint; the last remaining admin cannot be deleted
+
+## Commission and settlement
+
+A commission doctor and the clinic have to agree on one number at month end, and which way it
+points depends on who took the money:
+
+- **Commission is earned on sessions the patient actually attended.** A booking nobody turned up
+  for earned nothing.
+- **If the front desk took the payment**, the clinic is holding the doctor's share and owes it
+  to them.
+- **If the doctor took it at the chair**, they are holding the clinic's commission and owe that
+  back. Recording a payment offers "who took the money?" whenever the clinic has commission
+  doctors.
+- **Payouts are expenses.** Paying a doctor their share records a commission expense, so it
+  reaches the P&L and comes off what is still owed.
+
+The Doctors page shows, per doctor and per month: sessions, what they billed, the doctor's
+share, what the clinic keeps, what they took at the chair, what has already been paid, and the
+closing settlement — labelled *Clinic owes the doctor*, *Doctor owes the clinic*, or *Settled
+up*. One definition in `shared/commission.ts`, used by the API, the app and the demo alike.
 
 ## How money is counted
 
@@ -270,6 +317,9 @@ All routes except `POST /api/auth/login` require an `Authorization: Bearer <toke
 | GET    | `/api/reports/dashboard`            | Dashboard summary                           |
 | GET    | `/api/reports/profit-loss?days=30`  | P&amp;L for a range (`days=N`, or `from`/`to`) |
 | GET    | `/api/reports/outstanding`          | Patients owing money                        |
+| GET    | `/api/reports/due-payments?days=7`  | Payments due soon, and anything overdue     |
+| GET    | `/api/doctors/earnings?from=&to=`   | Each doctor's earnings and settlement       |
+| POST   | `/api/doctors/post-salaries`        | Post a month's salaries to expenses         |
 | GET    | `/api/reports/credits`              | Patients holding a credit balance           |
 | GET    | `/api/settings`                     | Clinic name and default fees                |
 | PUT    | `/api/settings`                     | Update clinic details and default fees      |

@@ -70,6 +70,8 @@ export interface Diagnosis {
 }
 
 export type PackageStatus = 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+export type BillingCycle = 'ONE_TIME' | 'WEEKLY' | 'MONTHLY';
+export type EmploymentType = 'SALARIED' | 'COMMISSION';
 
 export interface Installment {
   id: string;
@@ -84,6 +86,11 @@ export interface Installment {
 export interface TreatmentPackage {
   id: string;
   patientId: string;
+  /** Weekly and monthly packages bill per cycle; the rest is worked out from that. */
+  billingCycle?: BillingCycle;
+  sessionsPerCycle?: number | null;
+  cycleFee?: number | null;
+  cycles?: number | null;
   patient?: { name: string; phone: string };
   diagnosisId?: string | null;
   title: string;
@@ -136,6 +143,11 @@ export interface Doctor {
   /** Printed beside the logo on the prescription, one qualification per line. */
   credentials?: string | null;
   onLetterhead?: boolean;
+  departments?: string[];
+  /** Salaried doctors draw monthlySalary; commission doctors keep commissionPercent. */
+  employmentType?: EmploymentType;
+  monthlySalary?: number | null;
+  commissionPercent?: number | null;
   sessionsThisMonth?: number;
   sessionsCompleted?: number;
   visits?: Visit[];
@@ -163,10 +175,38 @@ export interface Payment {
   method: PaymentMethod;
   date: string;
   notes?: string | null;
+  /** Set when a commission doctor took the money at the chair rather than the front desk. */
+  collectedByDoctorId?: string | null;
+}
+
+/** A payment the patient still owes, as the front desk sees it. */
+export interface DuePayment {
+  id: string;
+  amount: number;
+  dueDate: string;
+  daysAway?: number;
+  overdue: boolean;
+  packageId: string;
+  packageTitle: string;
+  billingCycle?: BillingCycle;
+  patient: { id: string; name: string; phone: string };
+}
+
+/** What a doctor earned over a range, and who owes whom because of it. */
+export interface DoctorEarnings {
+  doctor: Doctor;
+  sessions: number;
+  gross: number;
+  doctorShare: number;
+  clinicShare: number;
+  collectedByDoctor: number;
+  paidOut: number;
+  balance: number;
 }
 
 export type ExpenseCategory =
   | 'SALARY'
+  | 'COMMISSION'
   | 'RENT'
   | 'UTILITIES'
   | 'EQUIPMENT'
@@ -182,4 +222,7 @@ export interface Expense {
   date: string;
   paidTo?: string | null;
   notes?: string | null;
+  /** Set when the money went to a doctor — a salary or a commission settlement. */
+  doctorId?: string | null;
+  doctor?: { id: string; name: string } | null;
 }

@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { splitInstallments } from '../../../shared/money';
+import { BILLING_CYCLES, frequencyForCycle, isRecurring, planCycles } from '../../../shared/packages';
 
 const router = Router();
 router.use(requireAuth);
@@ -12,8 +13,14 @@ const packageSchema = z.object({
   patientId: z.string().min(1),
   diagnosisId: z.string().optional().nullable(),
   title: z.string().min(1),
-  totalSessions: z.number().int().min(1),
-  feePerSession: z.number().min(0),
+  // A weekly or monthly package gives these instead, and they are worked out from the cycle.
+  totalSessions: z.number().int().min(1).optional(),
+  feePerSession: z.number().min(0).optional(),
+  // billingCycle: ONE_TIME | WEEKLY | MONTHLY
+  billingCycle: z.enum(BILLING_CYCLES).optional(),
+  sessionsPerCycle: z.number().int().min(1).optional(),
+  cycleFee: z.number().min(0).optional(),
+  cycles: z.number().int().min(1).optional(),
   startDate: z.string().optional(),
   notes: z.string().optional().nullable(),
   doctorId: z.string().optional().nullable(),
@@ -69,8 +76,31 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const data = packageSchema.parse(req.body);
-    const totalFee = data.totalSessions * data.feePerSession;
     const startDate = data.startDate ? new Date(data.startDate) : new Date();
+    const cycle = data.billingCycle ?? 'ONE_TIME';
+
+    // A weekly or monthly package is expressed in cycles — "3 a week at Rs 4,000 for 6 weeks"
+    // — and turned into the ordinary shape here, so nothing downstream has to know about it.
+    const cyclePlan = isRecurring(cycle)
+      ? planCycles({
+          cycle,
+          sessionsPerCycle: data.sessionsPerCycle ?? 1,
+          cycleFee: data.cycleFee ?? 0,
+          cycles: data.cycles ?? 1,
+          startDate,
+        })
+      : null;
+
+    const totalSessions = cyclePlan?.totalSessions ?? data.totalSessions;
+    if (!totalSessions) {
+      return res.status(400).json({ error: 'How many sessions this package covers is missing.' });
+    }
+    const feePerSession = cyclePlan
+      ? totalSessions > 0
+        ? cyclePlan.totalFee / totalSessions
+        : 0
+      : data.feePerSession ?? 0;
+    const totalFee = cyclePlan ? cyclePlan.totalFee : totalSessions * feePerSession;
 
     const advanceAmount = data.advanceAmount ?? 0;
     const installmentCount = data.installmentCount ?? 0;
@@ -81,6 +111,19 @@ router.post(
       amount: i.amount,
       dueDate: new Date(i.dueDate),
     }));
+
+    // A cyclic package bills once per cycle: that row of due dates is what the payment
+    // reminders run off, so it is generated unless the caller supplied its own schedule.
+    if (!installmentPlan && cyclePlan) {
+      let remainingAdvance = advanceAmount;
+      installmentPlan = cyclePlan.installments
+        .map(({ amount, dueDate }) => {
+          const covered = Math.min(remainingAdvance, amount);
+          remainingAdvance -= covered;
+          return { amount: amount - covered, dueDate };
+        })
+        .filter((i) => i.amount > 0);
+    }
 
     const balanceAfterAdvance = Math.max(totalFee - advanceAmount, 0);
 
@@ -104,9 +147,13 @@ router.post(
           patientId: data.patientId,
           diagnosisId: data.diagnosisId || null,
           title: data.title,
-          totalSessions: data.totalSessions,
-          feePerSession: data.feePerSession,
+          totalSessions,
+          feePerSession,
           totalFee,
+          billingCycle: cycle,
+          sessionsPerCycle: cyclePlan ? data.sessionsPerCycle ?? null : null,
+          cycleFee: cyclePlan ? data.cycleFee ?? null : null,
+          cycles: cyclePlan ? data.cycles ?? null : null,
           startDate,
           notes: data.notes || null,
           installments: installmentPlan ? { create: installmentPlan } : undefined,
@@ -129,9 +176,13 @@ router.post(
       }
 
       if (data.generateSchedule) {
-        const freq = data.scheduleFrequencyDays ?? 2;
+        // A weekly or monthly package spaces its sessions so the agreed number land in each
+        // cycle, rather than using the flat default.
+        const freq =
+          data.scheduleFrequencyDays ??
+          (cyclePlan ? frequencyForCycle(cycle, data.sessionsPerCycle ?? 1) : 2);
         await tx.visit.createMany({
-          data: Array.from({ length: data.totalSessions }).map((_, idx) => {
+          data: Array.from({ length: totalSessions }).map((_, idx) => {
             const scheduledDate = new Date(startDate);
             scheduledDate.setDate(scheduledDate.getDate() + idx * freq);
             return {
@@ -142,7 +193,7 @@ router.post(
               sessionNumber: idx + 1,
               scheduledDate,
               type: 'SESSION' as const,
-              fee: data.feePerSession,
+              fee: feePerSession,
             };
           }),
         });

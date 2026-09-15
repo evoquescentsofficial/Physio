@@ -29,6 +29,16 @@ import {
   lastScheduledDate,
   nextSessionDate,
 } from '../../../shared/scheduling';
+import {
+  BillingCycle,
+  CYCLE_LABELS,
+  cycleNoun,
+  dueLabel,
+  frequencyForCycle,
+  isRecurring,
+  nextDue,
+  planCycles,
+} from '../../../shared/packages';
 
 type Tab = 'overview' | 'diagnoses' | 'packages' | 'sessions' | 'payments';
 
@@ -739,6 +749,46 @@ function SuggestPackageModal({
   );
 }
 
+/**
+ * The next payment this package is waiting on. A monthly package quietly falls due every
+ * month, so it has to say so on the record rather than only in a report nobody opens.
+ */
+function DueStrip({ pkg }: { pkg: TreatmentPackage }) {
+  const due = nextDue(pkg.installments || []);
+  if (!due) return null;
+
+  return (
+    <div
+      className={`mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg px-4 py-2.5 text-sm ${
+        due.overdue
+          ? 'bg-red-50 text-red-800'
+          : due.daysAway <= 3
+            ? 'bg-amber-50 text-amber-900'
+            : 'bg-brand-50 text-ink-700'
+      }`}
+    >
+      <span>
+        <span className="font-semibold">{currency(due.amount)}</span>{' '}
+        {isRecurring(pkg.billingCycle)
+          ? `for the next ${cycleNoun(pkg.billingCycle!)}`
+          : 'on the payment plan'}{' '}
+        — {formatDate(due.dueDate)}
+      </span>
+      <span
+        className={`badge ${
+          due.overdue
+            ? 'bg-red-100 text-red-700'
+            : due.daysAway <= 3
+              ? 'bg-amber-100 text-amber-800'
+              : 'bg-white text-ink-600'
+        }`}
+      >
+        {dueLabel(due)}
+      </span>
+    </div>
+  );
+}
+
 function Packages({ patient, reload }: { patient: Patient; reload: () => void }) {
   const { settings } = useSettings();
   const [open, setOpen] = useState(false);
@@ -749,8 +799,13 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
   const emptyForm = {
     title: '',
     diagnosisId: '',
+    billingCycle: 'ONE_TIME' as BillingCycle,
     totalSessions: 10,
     feePerSession: settings.defaultSessionFee,
+    // Used by weekly and monthly packages instead of the two above.
+    sessionsPerCycle: 3,
+    cycleFee: settings.defaultSessionFee * 3,
+    cycles: 4,
     startDate: toInputDate(new Date()),
     notes: '',
     generateSchedule: true,
@@ -769,12 +824,36 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
   // Existing credit on the account is applied to this package before anything is owed.
   const existingCredit = accountPosition(patient.packages || [], patient.payments || []).credit;
 
-  const totalFee = form.totalSessions * form.feePerSession;
+  // A weekly or monthly package is priced per cycle; the sessions and the total follow from it.
+  const recurring = isRecurring(form.billingCycle);
+  const cyclePlan = recurring
+    ? planCycles({
+        cycle: form.billingCycle,
+        sessionsPerCycle: Number(form.sessionsPerCycle),
+        cycleFee: Number(form.cycleFee),
+        cycles: Number(form.cycles),
+        startDate: form.startDate,
+      })
+    : null;
+  const totalSessions = cyclePlan ? cyclePlan.totalSessions : form.totalSessions;
+  const totalFee = cyclePlan ? cyclePlan.totalFee : form.totalSessions * form.feePerSession;
   const settled = form.advanceAmount + existingCredit;
   const balance = Math.max(totalFee - settled, 0);
   const newCredit = Math.max(settled - totalFee, 0);
   const perInstallment =
     form.installmentCount > 0 && balance > 0 ? Math.floor(balance / form.installmentCount) : 0;
+
+  function chooseCycle(billingCycle: BillingCycle) {
+    setForm((f) => ({
+      ...f,
+      billingCycle,
+      // A cyclic package pays per cycle, so the one-off advance/installment plan does not apply.
+      installmentCount: isRecurring(billingCycle) ? 0 : 3,
+      scheduleFrequencyDays: isRecurring(billingCycle)
+        ? frequencyForCycle(billingCycle, Number(f.sessionsPerCycle))
+        : 2,
+    }));
+  }
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -782,8 +861,17 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
       patientId: patient.id,
       title: form.title,
       diagnosisId: form.diagnosisId || null,
-      totalSessions: Number(form.totalSessions),
-      feePerSession: Number(form.feePerSession),
+      billingCycle: form.billingCycle,
+      ...(recurring
+        ? {
+            sessionsPerCycle: Number(form.sessionsPerCycle),
+            cycleFee: Number(form.cycleFee),
+            cycles: Number(form.cycles),
+          }
+        : {
+            totalSessions: Number(form.totalSessions),
+            feePerSession: Number(form.feePerSession),
+          }),
       startDate: form.startDate,
       notes: form.notes,
       generateSchedule: form.generateSchedule,
@@ -837,10 +925,21 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                     <div className="flex items-center gap-2">
                       <h4 className="font-semibold text-ink-900">{p.title}</h4>
                       <Badge value={p.status} />
+                      {isRecurring(p.billingCycle) && (
+                        <span className="badge bg-violet-100 text-violet-700">
+                          {CYCLE_LABELS[p.billingCycle!]}
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-ink-400">
-                      Started {formatDate(p.startDate)} · {p.totalSessions} sessions ×{' '}
-                      {currency(p.feePerSession)}
+                      Started {formatDate(p.startDate)} ·{' '}
+                      {isRecurring(p.billingCycle)
+                        ? `${p.sessionsPerCycle} sessions a ${cycleNoun(p.billingCycle!)} · ${currency(
+                            p.cycleFee || 0
+                          )} per ${cycleNoun(p.billingCycle!)} · ${p.cycles} ${cycleNoun(
+                            p.billingCycle!
+                          )}s`
+                        : `${p.totalSessions} sessions × ${currency(p.feePerSession)}`}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -887,6 +986,8 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                     hint={`${pending} overdue pending`}
                   />
                 </div>
+
+                <DueStrip pkg={p} />
 
                 <div className="mt-4">
                   <div className="h-2 w-full overflow-hidden rounded-full bg-ink-100">
@@ -968,26 +1069,104 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
               ))}
             </select>
           </Field>
-          <Field label="Total sessions">
-            <input
-              className="input"
-              type="number"
-              min={1}
-              value={form.totalSessions}
-              onChange={(e) => setForm({ ...form, totalSessions: Number(e.target.value) })}
-              required
-            />
-          </Field>
-          <Field label="Fee per session">
-            <input
-              className="input"
-              type="number"
-              min={0}
-              value={form.feePerSession}
-              onChange={(e) => setForm({ ...form, feePerSession: Number(e.target.value) })}
-              required
-            />
-          </Field>
+          {/* How the package is sold: in one go, or by the week or month. */}
+          <div className="sm:col-span-2">
+            <label className="label">How is this package billed?</label>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {(['ONE_TIME', 'WEEKLY', 'MONTHLY'] as BillingCycle[]).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => chooseCycle(c)}
+                  className={`rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
+                    form.billingCycle === c
+                      ? 'border-brand-600 bg-brand-50 text-brand-800'
+                      : 'border-ink-200 bg-white text-ink-600 hover:bg-ink-50'
+                  }`}
+                >
+                  <span className="block font-semibold">{CYCLE_LABELS[c]}</span>
+                  <span className="block text-xs text-ink-500">
+                    {c === 'ONE_TIME'
+                      ? 'A set number of sessions, paid as an advance and installments'
+                      : c === 'WEEKLY'
+                        ? 'So many sessions a week, paid every week'
+                        : 'So many sessions a month, paid every month'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {recurring ? (
+            <>
+              <Field label={`Sessions per ${cycleNoun(form.billingCycle)}`}>
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  value={form.sessionsPerCycle}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      sessionsPerCycle: Math.max(1, Number(e.target.value)),
+                      scheduleFrequencyDays: frequencyForCycle(
+                        form.billingCycle,
+                        Math.max(1, Number(e.target.value))
+                      ),
+                    })
+                  }
+                  required
+                />
+              </Field>
+              <Field label={`Fee per ${cycleNoun(form.billingCycle)}`}>
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  value={form.cycleFee}
+                  onChange={(e) => setForm({ ...form, cycleFee: Number(e.target.value) })}
+                  required
+                />
+              </Field>
+              <Field
+                label={`How many ${cycleNoun(form.billingCycle)}s?`}
+                hint={`One payment falls due every ${cycleNoun(form.billingCycle)}, starting on the start date.`}
+              >
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={52}
+                  value={form.cycles}
+                  onChange={(e) => setForm({ ...form, cycles: Math.max(1, Number(e.target.value)) })}
+                  required
+                />
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label="Total sessions">
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  value={form.totalSessions}
+                  onChange={(e) => setForm({ ...form, totalSessions: Number(e.target.value) })}
+                  required
+                />
+              </Field>
+              <Field label="Fee per session">
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  value={form.feePerSession}
+                  onChange={(e) => setForm({ ...form, feePerSession: Number(e.target.value) })}
+                  required
+                />
+              </Field>
+            </>
+          )}
           <Field label="Start date">
             <input
               className="input"
@@ -1018,16 +1197,19 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
               <option value="OTHER">Other</option>
             </select>
           </Field>
-          <Field label="Remaining paid in how many installments?">
-            <input
-              className="input"
-              type="number"
-              min={0}
-              value={form.installmentCount}
-              onChange={(e) => setForm({ ...form, installmentCount: Number(e.target.value) })}
-              placeholder="0 = no installments"
-            />
-          </Field>
+          {/* A weekly or monthly package already has its own schedule of payments. */}
+          {!recurring && (
+            <Field label="Remaining paid in how many installments?">
+              <input
+                className="input"
+                type="number"
+                min={0}
+                value={form.installmentCount}
+                onChange={(e) => setForm({ ...form, installmentCount: Number(e.target.value) })}
+                placeholder="0 = no installments"
+              />
+            </Field>
+          )}
           <div className="rounded-lg bg-brand-50 p-4 sm:col-span-2">
             <label className="flex items-center gap-2 text-sm font-medium text-ink-800">
               <input
@@ -1056,10 +1238,22 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
           <div className="rounded-lg border border-brand-100 bg-ink-50 p-4 text-sm sm:col-span-2">
             <div className="flex justify-between py-1">
               <span className="text-ink-600">
-                Package total ({form.totalSessions} × {currency(form.feePerSession)})
+                {recurring
+                  ? `Package total (${form.cycles} ${cycleNoun(form.billingCycle)}s × ${currency(
+                      Number(form.cycleFee)
+                    )})`
+                  : `Package total (${form.totalSessions} × ${currency(form.feePerSession)})`}
               </span>
               <span className="font-bold text-brand-700">{currency(totalFee)}</span>
             </div>
+            {recurring && (
+              <div className="flex justify-between py-1">
+                <span className="text-ink-600">Sessions booked</span>
+                <span className="font-semibold text-ink-900">
+                  {totalSessions} ({form.sessionsPerCycle} a {cycleNoun(form.billingCycle)})
+                </span>
+              </div>
+            )}
             <div className="flex justify-between py-1">
               <span className="text-ink-600">Advance paid now</span>
               <span className="font-semibold text-emerald-600">
@@ -1083,7 +1277,20 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                 their next package automatically.
               </div>
             )}
-            {form.installmentCount > 0 && balance > 0 && (
+            {recurring && cyclePlan && (
+              <div className="mt-2 rounded bg-white px-3 py-2 text-xs text-ink-600">
+                {cyclePlan.installments.length} payments of{' '}
+                <span className="font-semibold text-ink-900">{currency(Number(form.cycleFee))}</span>
+                , one every {cycleNoun(form.billingCycle)} from{' '}
+                {formatDate(form.startDate)} to{' '}
+                {formatDate(
+                  cyclePlan.installments[cyclePlan.installments.length - 1].dueDate.toISOString()
+                )}
+                . The patient page shows the next one due, and it appears on the dashboard
+                reminder list as the date approaches.
+              </div>
+            )}
+            {!recurring && form.installmentCount > 0 && balance > 0 && (
               <div className="mt-2 rounded bg-white px-3 py-2 text-xs text-ink-600">
                 {form.installmentCount} monthly installments of about{' '}
                 <span className="font-semibold text-ink-900">{currency(perInstallment)}</span>,
@@ -1920,9 +2127,20 @@ function Payments({ patient, reload }: { patient: Patient; reload: () => void })
     packageId: '',
     date: toInputDate(new Date()),
     notes: '',
+    collectedByDoctorId: '',
   };
   const [form, setForm] = useState(emptyForm);
   const [confirmingPayment, setConfirmingPayment] = useState<Payment | null>(null);
+  // Only commission doctors can hold the clinic's money, so only they are worth offering.
+  const [commissionDoctors, setCommissionDoctors] = useState<Doctor[]>([]);
+
+  useEffect(() => {
+    api
+      .get('/doctors')
+      .then((r) =>
+        setCommissionDoctors((r.data as Doctor[]).filter((d) => d.employmentType === 'COMMISSION'))
+      );
+  }, []);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -1934,6 +2152,7 @@ function Payments({ patient, reload }: { patient: Patient; reload: () => void })
       method: form.method,
       date: form.date,
       notes: form.notes,
+      collectedByDoctorId: form.collectedByDoctorId || null,
     });
     setOpen(false);
     setForm(emptyForm);
@@ -2092,6 +2311,25 @@ function Payments({ patient, reload }: { patient: Patient; reload: () => void })
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
             />
           </Field>
+          {commissionDoctors.length > 0 && (
+            <Field
+              label="Who took the money?"
+              hint="A commission doctor who takes payment at the chair is holding the clinic's share — it shows up in their settlement."
+            >
+              <select
+                className="input"
+                value={form.collectedByDoctorId}
+                onChange={(e) => setForm({ ...form, collectedByDoctorId: e.target.value })}
+              >
+                <option value="">The front desk</option>
+                {commissionDoctors.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>
               Cancel

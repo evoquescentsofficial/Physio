@@ -12,7 +12,15 @@ import {
   formatDate,
   toInputDate,
 } from '../components/ui';
-import { Doctor } from '../types';
+import { Doctor, DoctorEarnings, EmploymentType } from '../types';
+import { useSettings } from '../context/SettingsContext';
+import DoctorEarningsPanel from '../components/DoctorEarningsPanel';
+import {
+  DEFAULT_DEPARTMENTS,
+  EMPLOYMENT_TYPES,
+  settlementLabel,
+} from '../../../shared/commission';
+import { salaryPeriod, monthLabel } from '../../../shared/commission';
 
 /** "Dr. Sana Aslam" should read as S, not D — the title is not the person's initial. */
 function initialOf(name: string) {
@@ -33,9 +41,17 @@ const emptyForm = {
   notes: '',
   credentials: '',
   onLetterhead: false,
+  departments: [] as string[],
+  employmentType: 'SALARIED' as EmploymentType,
+  monthlySalary: '',
+  commissionPercent: '',
 };
 
 export default function Doctors() {
+  const { settings } = useSettings();
+  const departmentOptions = settings.departmentOptions?.length
+    ? settings.departmentOptions
+    : DEFAULT_DEPARTMENTS;
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [showInactive, setShowInactive] = useState(true);
   const [open, setOpen] = useState(false);
@@ -73,6 +89,10 @@ export default function Doctors() {
       notes: d.notes || '',
       credentials: d.credentials || '',
       onLetterhead: !!d.onLetterhead,
+      departments: d.departments || [],
+      employmentType: (d.employmentType || 'SALARIED') as EmploymentType,
+      monthlySalary: d.monthlySalary != null ? String(d.monthlySalary) : '',
+      commissionPercent: d.commissionPercent != null ? String(d.commissionPercent) : '',
     });
     setOpen(true);
   }
@@ -86,6 +106,15 @@ export default function Doctors() {
         // Fee is optional — an empty box means "not set", not zero.
         consultationFee: form.consultationFee === '' ? null : Number(form.consultationFee),
         joinedDate: form.joinedDate || null,
+        // Only the arrangement in force carries a figure, so the other cannot go stale.
+        monthlySalary:
+          form.employmentType === 'SALARIED' && form.monthlySalary !== ''
+            ? Number(form.monthlySalary)
+            : null,
+        commissionPercent:
+          form.employmentType === 'COMMISSION' && form.commissionPercent !== ''
+            ? Number(form.commissionPercent)
+            : null,
       };
       if (editing) await api.put(`/doctors/${editing.id}`, payload);
       else await api.post('/doctors', payload);
@@ -149,6 +178,8 @@ export default function Doctors() {
         </Card>
       </div>
 
+      <DoctorEarningsPanel onPaid={load} />
+
       {doctors.length === 0 ? (
         <Card>
           <EmptyState message="No doctors added yet. Add your team to start assigning sessions." />
@@ -181,6 +212,26 @@ export default function Doctors() {
                   {d.qualification && (
                     <div className="truncate text-xs text-ink-400">{d.qualification}</div>
                   )}
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    <span
+                      className={`badge ${
+                        d.employmentType === 'COMMISSION'
+                          ? 'bg-violet-100 text-violet-700'
+                          : 'bg-brand-100 text-brand-700'
+                      }`}
+                    >
+                      {d.employmentType === 'COMMISSION'
+                        ? `${d.commissionPercent ?? 0}% commission`
+                        : d.monthlySalary
+                          ? `${currency(d.monthlySalary)} / month`
+                          : 'Salaried'}
+                    </span>
+                    {(d.departments || []).map((dep) => (
+                      <span key={dep} className="badge bg-ink-100 text-ink-600">
+                        {dep}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -351,6 +402,107 @@ export default function Doctors() {
               placeholder="Working days, shift timings, salary arrangement…"
             />
           </Field>
+
+          {/* Departments */}
+          <div className="sm:col-span-2">
+            <label className="label">Departments</label>
+            <div className="flex flex-wrap gap-2">
+              {departmentOptions.map((dep) => {
+                const on = form.departments.includes(dep);
+                return (
+                  <button
+                    key={dep}
+                    type="button"
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        departments: on
+                          ? form.departments.filter((x) => x !== dep)
+                          : [...form.departments, dep],
+                      })
+                    }
+                    className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                      on
+                        ? 'border-brand-600 bg-brand-600 text-white'
+                        : 'border-ink-200 bg-white text-ink-600 hover:bg-ink-50'
+                    }`}
+                  >
+                    {dep}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-xs text-ink-500">
+              A doctor can work in more than one. The list is editable in Settings.
+            </p>
+          </div>
+
+          {/* How they are paid */}
+          <div className="rounded-xl border border-ink-200 bg-ink-50 p-4 sm:col-span-2">
+            <label className="label">How is this doctor paid?</label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {EMPLOYMENT_TYPES.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setForm({ ...form, employmentType: t })}
+                  className={`rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
+                    form.employmentType === t
+                      ? 'border-brand-600 bg-brand-50 text-brand-800'
+                      : 'border-ink-200 bg-white text-ink-600 hover:bg-white/60'
+                  }`}
+                >
+                  <span className="block font-semibold">
+                    {t === 'SALARIED' ? 'On salary' : 'On commission'}
+                  </span>
+                  <span className="block text-xs text-ink-500">
+                    {t === 'SALARIED'
+                      ? 'A fixed amount every month, posted to expenses'
+                      : 'Keeps a share of what their sessions bill'}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3">
+              {form.employmentType === 'SALARIED' ? (
+                <Field
+                  label="Monthly salary"
+                  hint="Posted to expenses each month from the Doctors page, so the P&L includes it without anyone retyping it."
+                >
+                  <input
+                    className="input"
+                    type="number"
+                    min={0}
+                    value={form.monthlySalary}
+                    onChange={(e) => setForm({ ...form, monthlySalary: e.target.value })}
+                    placeholder="e.g. 60000"
+                  />
+                </Field>
+              ) : (
+                <Field
+                  label="The doctor's share (%)"
+                  hint={
+                    form.commissionPercent
+                      ? `They keep ${form.commissionPercent}% of what their sessions bill; the clinic keeps ${
+                          100 - Number(form.commissionPercent || 0)
+                        }%.`
+                      : 'For a 70/30 split in the doctor’s favour, enter 70.'
+                  }
+                >
+                  <input
+                    className="input"
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={form.commissionPercent}
+                    onChange={(e) => setForm({ ...form, commissionPercent: e.target.value })}
+                    placeholder="e.g. 70"
+                  />
+                </Field>
+              )}
+            </div>
+          </div>
 
           <div className="rounded-xl border border-brand-100 bg-brand-50/50 p-4 sm:col-span-2">
             <label className="flex items-center gap-2 text-sm font-semibold text-ink-900">

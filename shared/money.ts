@@ -40,6 +40,9 @@ export type InstallmentStatus = (typeof INSTALLMENT_STATUSES)[number];
 
 export const EXPENSE_CATEGORIES = [
   'SALARY',
+  // What a commission doctor is paid out at settlement. A cost like any other, and kept
+  // apart from salaries so the two can be read separately in the P&L.
+  'COMMISSION',
   'RENT',
   'UTILITIES',
   'EQUIPMENT',
@@ -138,6 +141,10 @@ export function installmentStatus(
   now: Date = new Date()
 ): 'PENDING' | 'PAID' | 'OVERDUE' {
   if (installment.status === 'PAID') return 'PAID';
+  // Overdue counts from the start of today, not from this instant: a payment due today is
+  // due today, and telling a patient at 9am that they are late is simply wrong.
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
   const due = new Date(installment.dueDate);
-  return due < now ? 'OVERDUE' : 'PENDING';
+  return due < today ? 'OVERDUE' : 'PENDING';
 }

@@ -9,10 +9,12 @@ import type { AxiosAdapter, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { buildDemoDb } from './demoData';
 import { DemoDb } from './demoTypes';
 import { accountPosition, installmentStatus, netAmount, splitInstallments } from '../../../shared/money';
+import { frequencyForCycle, isRecurring, planCycles } from '../../../shared/packages';
+import { computeDoctorEarnings, salaryPeriod, salaryTag } from '../../../shared/commission';
 
 // Bump when the stored shape changes, so browsers holding an older demo database
 // rebuild it instead of crashing on fields that did not exist then.
-const STORAGE_KEY = 'physio-demo-db-v3';
+const STORAGE_KEY = 'physio-demo-db-v4';
 
 function load(): DemoDb {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -129,6 +131,41 @@ function bucketKeys(from: Date, to: Date, bucket: Bucket) {
   return keys;
 }
 
+/**
+ * Payments falling due within `days`, plus anything already overdue — the reminder list.
+ * Mirrors /reports/due-payments on the server.
+ */
+function dueInstallments(days: number) {
+  const horizon = new Date();
+  horizon.setHours(23, 59, 59, 999);
+  horizon.setDate(horizon.getDate() + days);
+  const today = startOfToday();
+
+  return db.installments
+    .filter((i) => !i.paidDate && new Date(i.dueDate) <= horizon)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .map((i) => {
+      const pkg = db.packages.find((k) => k.id === i.packageId);
+      const patient = db.patients.find((p) => p.id === pkg?.patientId);
+      const due = new Date(i.dueDate);
+      due.setHours(0, 0, 0, 0);
+      return {
+        id: i.id,
+        amount: i.amount,
+        dueDate: i.dueDate,
+        daysAway: Math.round((due.getTime() - today.getTime()) / 86400000),
+        overdue: due < today,
+        packageId: pkg?.id || '',
+        packageTitle: pkg?.title || '',
+        billingCycle: pkg?.billingCycle || 'ONE_TIME',
+        patient: patient
+          ? { id: patient.id, name: patient.name, phone: patient.phone }
+          : { id: '', name: 'Unknown', phone: '' },
+      };
+    })
+    .filter((r) => r.packageId);
+}
+
 /** Mirrors the server's account calculation — see computeAccounts in reports.routes.ts. */
 function computeAccounts() {
   return db.patients.map((p) => ({
@@ -200,6 +237,72 @@ function handle(method: string, path: string, params: any, body: any): any {
       };
     };
 
+    // What each doctor earned, and who owes whom — the same sum the server does.
+    if (seg[1] === 'earnings' && method === 'get') {
+      const to = params?.to ? new Date(params.to) : new Date();
+      to.setHours(23, 59, 59, 999);
+      const from = params?.from
+        ? new Date(params.from)
+        : new Date(to.getFullYear(), to.getMonth(), 1);
+      from.setHours(0, 0, 0, 0);
+
+      return {
+        from: from.toISOString(),
+        to: to.toISOString(),
+        doctors: db.doctors.map((doctor) => ({
+          doctor: withStats(doctor),
+          ...computeDoctorEarnings(
+            doctor as any,
+            db.visits as any,
+            db.payments as any,
+            db.expenses
+              .filter((e) => e.category === 'SALARY' || e.category === 'COMMISSION')
+              .map((e) => ({ amount: e.amount, date: e.date, doctorId: e.doctorId })),
+            { from, to }
+          ),
+        })),
+      };
+    }
+
+    // Posts a month's salaries to expenses, refusing to pay the same month twice.
+    if (seg[1] === 'post-salaries' && method === 'post') {
+      const period = body.period || salaryPeriod(new Date());
+      const [year, month] = period.split('-').map(Number);
+      const date = new Date(year, month, 0, 12);
+      const tag = salaryTag(period);
+      const alreadyPosted = new Set(
+        db.expenses.filter((e) => (e.notes || '').includes(tag)).map((e) => e.doctorId)
+      );
+
+      const salaried = db.doctors.filter(
+        (d) => d.active && d.employmentType === 'SALARIED' && (d.monthlySalary || 0) > 0
+      );
+      const created = salaried
+        .filter((d) => !alreadyPosted.has(d.id))
+        .map((d) => {
+          const expense = {
+            id: newId('exp_'),
+            category: 'SALARY',
+            title: `Salary — ${d.name}`,
+            amount: d.monthlySalary!,
+            date: date.toISOString(),
+            paidTo: d.name,
+            notes: tag,
+            doctorId: d.id,
+          };
+          db.expenses.push(expense);
+          return expense;
+        });
+      persist();
+      return {
+        period,
+        posted: created.length,
+        skipped: salaried.length - created.length,
+        total: created.reduce((sum, e) => sum + e.amount, 0),
+        expenses: created,
+      };
+    }
+
     if (seg.length === 1 && method === 'get') {
       const includeInactive = String(params?.includeInactive) === 'true';
       return db.doctors
@@ -217,6 +320,10 @@ function handle(method: string, path: string, params: any, body: any): any {
         phone: body.phone || null,
         email: body.email || null,
         consultationFee: body.consultationFee ?? null,
+        departments: body.departments || [],
+        employmentType: body.employmentType || 'SALARIED',
+        monthlySalary: body.monthlySalary ?? null,
+        commissionPercent: body.commissionPercent ?? null,
         joinedDate: body.joinedDate ? new Date(body.joinedDate).toISOString() : null,
         active: body.active ?? true,
         notes: body.notes || null,
@@ -551,16 +658,38 @@ function handle(method: string, path: string, params: any, body: any): any {
         }));
     }
     if (seg.length === 1 && method === 'post') {
-      const totalFee = body.totalSessions * body.feePerSession;
       const startDate = body.startDate ? new Date(body.startDate) : new Date();
+      const cycle = body.billingCycle || 'ONE_TIME';
+      // A weekly or monthly package is turned into the ordinary shape here, the same way
+      // the server does it, so the demo and the real system cannot drift apart.
+      const cyclePlan = isRecurring(cycle)
+        ? planCycles({
+            cycle,
+            sessionsPerCycle: body.sessionsPerCycle || 1,
+            cycleFee: body.cycleFee || 0,
+            cycles: body.cycles || 1,
+            startDate,
+          })
+        : null;
+      const totalSessions = cyclePlan ? cyclePlan.totalSessions : body.totalSessions;
+      const feePerSession = cyclePlan
+        ? totalSessions > 0
+          ? cyclePlan.totalFee / totalSessions
+          : 0
+        : body.feePerSession;
+      const totalFee = cyclePlan ? cyclePlan.totalFee : totalSessions * feePerSession;
       const pkg = {
         id: newId('pkg_'),
         patientId: body.patientId,
         diagnosisId: body.diagnosisId || null,
         title: body.title,
-        totalSessions: body.totalSessions,
-        feePerSession: body.feePerSession,
+        totalSessions,
+        feePerSession,
         totalFee,
+        billingCycle: cycle,
+        sessionsPerCycle: cyclePlan ? body.sessionsPerCycle : null,
+        cycleFee: cyclePlan ? body.cycleFee : null,
+        cycles: cyclePlan ? body.cycles : null,
         startDate: startDate.toISOString(),
         status: 'ACTIVE',
         notes: body.notes || null,
@@ -597,6 +726,24 @@ function handle(method: string, path: string, params: any, body: any): any {
             paymentId: null,
           });
         }
+      } else if (cyclePlan) {
+        // One payment per cycle: the row of due dates the reminders run off.
+        let remaining = advance;
+        cyclePlan.installments.forEach(({ amount, dueDate }) => {
+          const covered = Math.min(remaining, amount);
+          remaining -= covered;
+          if (amount - covered <= 0) return;
+          db.installments.push({
+            id: newId('ins_'),
+            packageId: pkg.id,
+            amount: amount - covered,
+            dueDate: dueDate.toISOString(),
+            paidDate: null,
+            status: 'PENDING',
+            notes: null,
+            paymentId: null,
+          });
+        });
       } else if (count > 0 && totalFee - advance > 0) {
         splitInstallments(totalFee - advance, count).forEach((amount, i) => {
           const due = new Date(startDate);
@@ -615,8 +762,10 @@ function handle(method: string, path: string, params: any, body: any): any {
       }
 
       if (body.generateSchedule) {
-        const freq = body.scheduleFrequencyDays ?? 2;
-        for (let s = 0; s < body.totalSessions; s++) {
+        const freq =
+          body.scheduleFrequencyDays ??
+          (cyclePlan ? frequencyForCycle(cycle, body.sessionsPerCycle || 1) : 2);
+        for (let s = 0; s < totalSessions; s++) {
           const d = new Date(startDate);
           d.setDate(d.getDate() + s * freq);
           db.visits.push({
@@ -629,7 +778,7 @@ function handle(method: string, path: string, params: any, body: any): any {
             scheduledDate: d.toISOString(),
             completedDate: null,
             type: 'SESSION',
-            fee: body.feePerSession,
+            fee: feePerSession,
             feeCollected: false,
             attendance: 'SCHEDULED',
             carriedForward: false,
@@ -824,6 +973,7 @@ function handle(method: string, path: string, params: any, body: any): any {
         method: body.method || 'CASH',
         date: body.date ? new Date(body.date).toISOString() : new Date().toISOString(),
         notes: body.notes || null,
+        collectedByDoctorId: body.collectedByDoctorId || null,
       };
       db.payments.push(p);
       if (p.visitId && ['SESSION_FEE', 'VISIT_FEE'].includes(p.type)) {
@@ -866,6 +1016,7 @@ function handle(method: string, path: string, params: any, body: any): any {
         date: body.date ? new Date(body.date).toISOString() : new Date().toISOString(),
         paidTo: body.paidTo || null,
         notes: body.notes || null,
+        doctorId: body.doctorId || null,
       };
       db.expenses.push(e);
       persist();
@@ -924,7 +1075,12 @@ function handle(method: string, path: string, params: any, body: any): any {
         monthProfit: monthRevenue - monthExpenseTotal,
         outstandingDues,
         patientCredits,
+        duePayments: dueInstallments(7).slice(0, 8),
       };
+    }
+
+    if (seg[1] === 'due-payments' && method === 'get') {
+      return dueInstallments(Math.max(0, Math.min(90, Number(params?.days) || 7)));
     }
 
     if (seg[1] === 'revenue') {

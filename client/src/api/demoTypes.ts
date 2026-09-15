@@ -13,6 +13,7 @@ export interface DemoSettings {
   diagnosisOptions?: string[];
   exerciseOptions?: string[];
   modalityOptions?: string[];
+  departmentOptions?: string[];
 }
 
 export interface DemoPatient {
@@ -73,6 +74,10 @@ export interface DemoAttachment {
 export interface DemoPackage {
   id: string;
   patientId: string;
+  billingCycle?: string;
+  sessionsPerCycle?: number | null;
+  cycleFee?: number | null;
+  cycles?: number | null;
   diagnosisId: string | null;
   title: string;
   totalSessions: number;
@@ -108,6 +113,10 @@ export interface DemoDoctor {
   notes: string | null;
   credentials?: string | null;
   onLetterhead?: boolean;
+  departments?: string[];
+  employmentType?: string;
+  monthlySalary?: number | null;
+  commissionPercent?: number | null;
 }
 
 export interface DemoVisit {
@@ -140,6 +149,7 @@ export interface DemoPayment {
   method: string;
   date: string;
   notes: string | null;
+  collectedByDoctorId?: string | null;
 }
 
 export interface DemoExpense {
@@ -150,6 +160,7 @@ export interface DemoExpense {
   date: string;
   paidTo: string | null;
   notes: string | null;
+  doctorId?: string | null;
 }
 
 export interface DemoDb {

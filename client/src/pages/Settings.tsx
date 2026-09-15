@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Card, Field, PageHeader, currency } from '../components/ui';
 import { useSettings } from '../context/SettingsContext';
+import { DEFAULT_DEPARTMENTS } from '../../../shared/commission';
 import {
   DEFAULT_DIAGNOSIS_OPTIONS,
   DEFAULT_EXERCISE_OPTIONS,
@@ -43,7 +44,12 @@ function ListEditor({
 export default function Settings() {
   const { settings, save } = useSettings();
   const [form, setForm] = useState(settings);
-  const [lists, setLists] = useState({ diagnosis: '', exercises: '', modalities: '' });
+  const [lists, setLists] = useState({
+    diagnosis: '',
+    exercises: '',
+    modalities: '',
+    departments: '',
+  });
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -53,6 +59,7 @@ export default function Settings() {
       diagnosis: (settings.diagnosisOptions || []).join('\n'),
       exercises: (settings.exerciseOptions || []).join('\n'),
       modalities: (settings.modalityOptions || []).join('\n'),
+      departments: (settings.departmentOptions || []).join('\n'),
     });
   }, [settings]);
 
@@ -74,6 +81,7 @@ export default function Settings() {
         diagnosisOptions: linesToList(lists.diagnosis),
         exerciseOptions: linesToList(lists.exercises),
         modalityOptions: linesToList(lists.modalities),
+        departmentOptions: linesToList(lists.departments),
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -205,6 +213,20 @@ export default function Settings() {
                 placeholder="@physio_fitness_centre"
               />
             </Field>
+          </div>
+
+          <h4 className="mb-1 mt-6 font-semibold text-ink-900">Departments</h4>
+          <p className="mb-4 text-sm text-ink-500">
+            The parts of the clinic a doctor can be assigned to. One per line.
+          </p>
+          <div className="max-w-md">
+            <ListEditor
+              label="Departments"
+              hint="A doctor can belong to more than one."
+              value={lists.departments}
+              fallback={DEFAULT_DEPARTMENTS}
+              onChange={(v) => setLists({ ...lists, departments: v })}
+            />
           </div>
 
           <h4 className="mb-1 mt-6 font-semibold text-ink-900">Tick-box columns</h4>

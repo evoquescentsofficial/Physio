@@ -19,6 +19,9 @@ const paymentSchema = z.object({
   method: z.enum(['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'OTHER']).default('CASH'),
   date: z.string().optional(),
   notes: z.string().optional().nullable(),
+  // Left empty when the front desk took the money, which is the usual case. Naming a doctor
+  // means they took it at the chair and are holding the clinic's share of it.
+  collectedByDoctorId: z.string().optional().nullable(),
 });
 
 router.get(

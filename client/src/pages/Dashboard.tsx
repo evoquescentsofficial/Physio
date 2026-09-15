@@ -15,10 +15,11 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '../api/client';
-import { Card, EmptyState, currency } from '../components/ui';
+import { Card, EmptyState, currency, formatDate } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
-import { Visit } from '../types';
+import { DuePayment, Visit } from '../types';
+import { CYCLE_LABELS, isRecurring } from '../../../shared/packages';
 
 interface DashboardData {
   totalPatients: number;
@@ -30,6 +31,55 @@ interface DashboardData {
   monthProfit: number;
   outstandingDues: number;
   patientCredits: number;
+  /** Payments falling due in the next week, plus anything already overdue. */
+  duePayments?: DuePayment[];
+}
+
+/** The payment reminder list: overdue first, then what is coming up this week. */
+function DueReminders({ rows }: { rows: DuePayment[] }) {
+  const overdue = rows.filter((r) => r.overdue);
+  const total = rows.reduce((sum, r) => sum + r.amount, 0);
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-ink-100 px-5 py-4">
+        <div>
+          <h3 className="font-semibold text-ink-900">Payments due</h3>
+          <p className="text-xs text-ink-400">
+            {overdue.length > 0
+              ? `${overdue.length} overdue · ${rows.length - overdue.length} coming up this week`
+              : 'Falling due over the next week'}
+          </p>
+        </div>
+        <span className="text-lg font-bold text-brand-700">{currency(total)}</span>
+      </div>
+      <ul className="divide-y divide-ink-100">
+        {rows.map((r) => (
+          <li key={r.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
+            <Link
+              to={`/patients/${r.patient.id}`}
+              className="min-w-0 flex-1 text-sm font-medium text-brand-700 hover:underline"
+            >
+              {r.patient.name}
+              <span className="ml-2 font-normal text-ink-400">{r.patient.phone}</span>
+            </Link>
+            <span className="text-xs text-ink-500">
+              {r.packageTitle}
+              {isRecurring(r.billingCycle) ? ` · ${CYCLE_LABELS[r.billingCycle!]}` : ''}
+            </span>
+            <span className="font-semibold text-ink-900">{currency(r.amount)}</span>
+            <span
+              className={`badge ${
+                r.overdue ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {r.overdue ? 'Overdue' : 'Due'} {formatDate(r.dueDate)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
 }
 
 /**
@@ -233,6 +283,10 @@ export default function Dashboard() {
           to="/payments"
         />
       </div>
+
+      {/* Money the clinic is waiting on. A monthly package falls due quietly, so the day
+          starts with a list of who to remind rather than a number nobody chases. */}
+      {!!data?.duePayments?.length && <DueReminders rows={data.duePayments} />}
 
       {/* Practice health */}
       <div className="grid gap-4 sm:grid-cols-3">
