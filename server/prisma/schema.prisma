@@ -41,11 +41,14 @@ model Patient {
   packages  TreatmentPackage[]
   visits    Visit[]
   payments  Payment[]
+  attachments Attachment[]
 
   @@index([phone])
   @@index([name])
 }
 
+// One of these is a filled-in copy of the clinic's paper prescription pad: the whole
+// assessment, not just the diagnosis line. Everything on the printed form is here.
 model Diagnosis {
   id            String   @id @default(cuid())
   patientId     String
@@ -66,12 +69,48 @@ model Diagnosis {
   side          String?
   // Baseline pain out of 10 at assessment, the number progress is measured against.
   painScore     Int?
-  createdAt     DateTime @default(now())
 
-  packages TreatmentPackage[]
-  visits   Visit[]
+  // The written sections of the paper form, in the order they appear on it.
+  history      String?
+  evaluation   String?
+  instructions String?
+  referredTo   String?
+  labFindings  String?
+  medications  String?
+
+  // The three tick-box columns. SQLite has no array type, so these are JSON arrays of the
+  // ticked labels; the API parses them so the client always sees real arrays.
+  checkedDiagnoses String?
+  exercises        String?
+  modalities       String?
+
+  createdAt DateTime @default(now())
+
+  packages    TreatmentPackage[]
+  visits      Visit[]
+  attachments Attachment[]
 
   @@index([patientId])
+}
+
+// Scans, lab reports and X-rays that belong to an assessment. The file itself lives on disk
+// next to the database; only the reference is stored here.
+model Attachment {
+  id         String     @id @default(cuid())
+  patientId  String
+  patient    Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  diagnosisId String?
+  diagnosis  Diagnosis? @relation(fields: [diagnosisId], references: [id], onDelete: Cascade)
+  // What the clinic called it, versus the name it is saved under (never trusted from upload).
+  filename   String
+  storedName String
+  mimeType   String
+  size       Int
+  label      String?
+  uploadedAt DateTime   @default(now())
+
+  @@index([patientId])
+  @@index([diagnosisId])
 }
 
 // status: ACTIVE | COMPLETED | CANCELLED
@@ -188,6 +227,9 @@ model Doctor {
   joinedDate      DateTime?
   active          Boolean   @default(true)
   notes           String?
+  // The credentials block printed beside the logo, one line each, exactly as on the pad.
+  credentials     String?
+  onLetterhead    Boolean   @default(false)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -203,7 +245,21 @@ model ClinicSettings {
   address           String?
   checkupFee        Float    @default(1000)
   defaultSessionFee Float    @default(1500)
-  updatedAt         DateTime @updatedAt
+
+  // Printed on the prescription: the strip along the bottom of the pad.
+  email     String?
+  website   String?
+  instagram String?
+  timings   String?
+  formTitle String?
+
+  // The three tick-box columns on the prescription, as JSON arrays. Empty means "use the
+  // standard list" from shared/prescription.ts, so a clinic that never edits them still prints.
+  diagnosisOptions String?
+  exerciseOptions  String?
+  modalityOptions  String?
+
+  updatedAt DateTime @updatedAt
 }
 
 // category: SALARY | RENT | UTILITIES | EQUIPMENT | MARKETING | MAINTENANCE | OTHER

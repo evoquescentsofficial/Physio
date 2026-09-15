@@ -29,6 +29,20 @@ export interface Patient {
   visits?: Visit[];
 }
 
+export interface Attachment {
+  id: string;
+  patientId: string;
+  diagnosisId?: string | null;
+  filename: string;
+  mimeType: string;
+  size: number;
+  label?: string | null;
+  uploadedAt: string;
+  /** Demo only: the file itself, held in the browser rather than on a clinic computer. */
+  dataUrl?: string;
+}
+
+/** A filled-in copy of the clinic's prescription pad: the whole assessment, not just a label. */
 export interface Diagnosis {
   id: string;
   patientId: string;
@@ -43,6 +57,16 @@ export interface Diagnosis {
   bodyRegion?: string | null;
   side?: string | null;
   painScore?: number | null;
+  history?: string | null;
+  evaluation?: string | null;
+  instructions?: string | null;
+  referredTo?: string | null;
+  labFindings?: string | null;
+  medications?: string | null;
+  checkedDiagnoses?: string[];
+  exercises?: string[];
+  modalities?: string[];
+  attachments?: Attachment[];
 }
 
 export type PackageStatus = 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
@@ -109,6 +133,9 @@ export interface Doctor {
   joinedDate?: string | null;
   active: boolean;
   notes?: string | null;
+  /** Printed beside the logo on the prescription, one qualification per line. */
+  credentials?: string | null;
+  onLetterhead?: boolean;
   sessionsThisMonth?: number;
   sessionsCompleted?: number;
   visits?: Visit[];

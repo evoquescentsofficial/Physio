@@ -18,6 +18,9 @@ const doctorSchema = z.object({
   joinedDate: z.string().optional().nullable(),
   active: z.boolean().optional(),
   notes: z.string().optional().nullable(),
+  // Printed beside the logo on the prescription, one qualification per line.
+  credentials: z.string().optional().nullable(),
+  onLetterhead: z.boolean().optional(),
 });
 
 /** Sessions each doctor handled this month, so the list doubles as a workload view. */

@@ -12,7 +12,7 @@ import { accountPosition, installmentStatus, netAmount, splitInstallments } from
 
 // Bump when the stored shape changes, so browsers holding an older demo database
 // rebuild it instead of crashing on fields that did not exist then.
-const STORAGE_KEY = 'physio-demo-db-v2';
+const STORAGE_KEY = 'physio-demo-db-v3';
 
 function load(): DemoDb {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -32,7 +32,17 @@ function load(): DemoDb {
 let db: DemoDb = load();
 
 function persist() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  } catch {
+    // A browser store is a few megabytes; attached scans are what fills it. Say so rather
+    // than failing silently and losing whatever was just entered.
+    throw {
+      status: 507,
+      error:
+        'This browser has run out of space for the demo — usually an attached report. Remove a file, or press Reset demo.',
+    };
+  }
 }
 
 export function resetDemoData() {
@@ -136,6 +146,14 @@ const doctorBrief = (doctorId: string | null) => {
   return d ? { id: d.id, name: d.name } : null;
 };
 
+/** Attachments live in their own table, the way the API returns them with a diagnosis. */
+const withAttachments = <T extends { id: string }>(d: T) => ({
+  ...d,
+  attachments: db.attachments
+    .filter((a) => a.diagnosisId === d.id)
+    .sort((a, b) => a.uploadedAt.localeCompare(b.uploadedAt)),
+});
+
 const patientBrief = (patientId: string) => {
   const p = db.patients.find((x) => x.id === patientId);
   return p ? { name: p.name, phone: p.phone } : undefined;
@@ -202,6 +220,8 @@ function handle(method: string, path: string, params: any, body: any): any {
         joinedDate: body.joinedDate ? new Date(body.joinedDate).toISOString() : null,
         active: body.active ?? true,
         notes: body.notes || null,
+        credentials: body.credentials || null,
+        onLetterhead: body.onLetterhead ?? false,
       };
       db.doctors.push(doctor);
       persist();
@@ -296,7 +316,7 @@ function handle(method: string, path: string, params: any, body: any): any {
         diagnoses: db.diagnoses
           .filter((d) => d.patientId === patientId)
           .sort((a, b) => b.date.localeCompare(a.date))
-          .map((d) => ({ ...d, doctor: doctorBrief(d.doctorId || null) })),
+          .map((d) => ({ ...withAttachments(d), doctor: doctorBrief(d.doctorId || null) })),
         packages: db.packages
           .filter((k) => k.patientId === patientId)
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -344,7 +364,13 @@ function handle(method: string, path: string, params: any, body: any): any {
     if (seg.length === 1 && method === 'get') {
       return db.diagnoses
         .filter((d) => !params?.patientId || d.patientId === params.patientId)
-        .sort((a, b) => b.date.localeCompare(a.date));
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map(withAttachments);
+    }
+    if (seg.length === 2 && method === 'get') {
+      const d = db.diagnoses.find((x) => x.id === seg[1]);
+      if (!d) throw { status: 404, error: 'Assessment not found' };
+      return withAttachments(d);
     }
     if (seg.length === 1 && method === 'post') {
       const d = {
@@ -360,19 +386,60 @@ function handle(method: string, path: string, params: any, body: any): any {
         bodyRegion: body.bodyRegion || null,
         side: body.side || null,
         painScore: body.painScore ?? null,
+        history: body.history || null,
+        evaluation: body.evaluation || null,
+        instructions: body.instructions || null,
+        referredTo: body.referredTo || null,
+        labFindings: body.labFindings || null,
+        medications: body.medications || null,
+        checkedDiagnoses: body.checkedDiagnoses || [],
+        exercises: body.exercises || [],
+        modalities: body.modalities || [],
       };
       db.diagnoses.push(d);
       persist();
-      return d;
+      return withAttachments(d);
     }
     if (seg.length === 2 && method === 'put') {
       const d = db.diagnoses.find((x) => x.id === seg[1])!;
       Object.assign(d, body, body.date ? { date: new Date(body.date).toISOString() } : {});
       persist();
-      return d;
+      return withAttachments(d);
     }
     if (seg.length === 2 && method === 'delete') {
       db.diagnoses = db.diagnoses.filter((x) => x.id !== seg[1]);
+      // The reports attached to an assessment go with it, as they do on the server.
+      db.attachments = db.attachments.filter((a) => a.diagnosisId !== seg[1]);
+      persist();
+      return null;
+    }
+  }
+
+  // ---- attachments (reports and scans) ----
+  if (seg[0] === 'attachments') {
+    if (seg.length === 1 && method === 'get') {
+      return db.attachments
+        .filter((a) => !params?.patientId || a.patientId === params.patientId)
+        .filter((a) => !params?.diagnosisId || a.diagnosisId === params.diagnosisId);
+    }
+    if (seg.length === 1 && method === 'post') {
+      const attachment = {
+        id: newId('att_'),
+        patientId: body.patientId,
+        diagnosisId: body.diagnosisId || null,
+        filename: body.filename,
+        mimeType: body.mimeType,
+        size: body.size,
+        label: body.label || null,
+        uploadedAt: new Date().toISOString(),
+        dataUrl: body.dataUrl,
+      };
+      db.attachments.push(attachment);
+      persist();
+      return attachment;
+    }
+    if (seg.length === 2 && method === 'delete') {
+      db.attachments = db.attachments.filter((a) => a.id !== seg[1]);
       persist();
       return null;
     }
@@ -965,18 +1032,57 @@ function handle(method: string, path: string, params: any, body: any): any {
   throw { status: 404, error: `Demo API has no handler for ${method.toUpperCase()} ${path}` };
 }
 
+/**
+ * An upload arrives as FormData carrying a real File. There is no server to send it to, so the
+ * bytes are read here and kept with the record; the browser store is small, hence the cap.
+ */
+const DEMO_MAX_UPLOAD = 1.5 * 1024 * 1024;
+
+async function formDataToBody(form: FormData) {
+  const file = form.get('file');
+  if (!(file instanceof File)) throw { status: 400, error: 'No file was uploaded.' };
+  if (file.size > DEMO_MAX_UPLOAD) {
+    throw {
+      status: 413,
+      error: `In the demo a file has to be under ${DEMO_MAX_UPLOAD / 1024 / 1024} MB, because it is kept in the browser. The installed system takes files up to 10 MB.`,
+    };
+  }
+
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject({ status: 400, error: 'That file could not be read.' });
+    reader.readAsDataURL(file);
+  });
+
+  return {
+    patientId: String(form.get('patientId') || ''),
+    diagnosisId: String(form.get('diagnosisId') || '') || null,
+    label: String(form.get('label') || '') || null,
+    filename: file.name,
+    mimeType: file.type,
+    size: file.size,
+    dataUrl,
+  };
+}
+
 export const demoAdapter: AxiosAdapter = async (config: AxiosRequestConfig) => {
   const method = (config.method || 'get').toLowerCase();
   // Some callers put the query inline in the url, others pass config.params — support both.
   const [rawPath, rawQuery] = (config.url || '').replace(/^\/api/, '').split('?');
   const params = { ...Object.fromEntries(new URLSearchParams(rawQuery || '')), ...config.params };
   const path = rawPath;
-  const body = typeof config.data === 'string' ? JSON.parse(config.data || '{}') : config.data || {};
 
   // a touch of latency so loading states behave like the real thing
   await new Promise((r) => setTimeout(r, 60));
 
   try {
+    const body =
+      config.data instanceof FormData
+        ? await formDataToBody(config.data)
+        : typeof config.data === 'string'
+          ? JSON.parse(config.data || '{}')
+          : config.data || {};
     const data = handle(method, path, params, body);
     return {
       data,

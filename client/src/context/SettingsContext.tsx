@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { useAuth } from './AuthContext';
 
 export interface ClinicSettings {
   clinicName: string;
@@ -7,6 +8,16 @@ export interface ClinicSettings {
   address?: string | null;
   checkupFee: number;
   defaultSessionFee: number;
+  /** Printed along the bottom of the prescription. */
+  email?: string | null;
+  website?: string | null;
+  instagram?: string | null;
+  timings?: string | null;
+  formTitle?: string | null;
+  /** The prescription's tick-box columns. Empty means "use the standard list". */
+  diagnosisOptions?: string[];
+  exerciseOptions?: string[];
+  modalityOptions?: string[];
 }
 
 const fallback: ClinicSettings = {
@@ -28,6 +39,7 @@ const SettingsContext = createContext<SettingsContextValue>({
 });
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const [settings, setSettings] = useState<ClinicSettings>(fallback);
 
   const reload = useCallback(async () => {
@@ -48,9 +60,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  // Signing in is when the settings first become fetchable. Without watching the user, the
+  // app ran on built-in defaults until the page happened to be reloaded — and the printed
+  // prescription would have gone out with the wrong clinic details on it.
   useEffect(() => {
     reload();
-  }, [reload]);
+  }, [reload, user?.id]);
 
   return (
     <SettingsContext.Provider value={{ settings, reload, save }}>

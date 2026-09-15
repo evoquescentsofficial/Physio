@@ -37,3 +37,38 @@
     @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
 }
+
+/**
+ * Printing. The prescription is the one thing in this app that goes on paper, so everything
+ * that is screen furniture — sidebar, top bar, buttons — is taken out of the way and the sheet
+ * is given the whole page.
+ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  /* The app lays content out to the right of a fixed sidebar; on paper there is no sidebar. */
+  .lg\:pl-64 {
+    padding-left: 0 !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .print-sheet {
+    width: 100%;
+    max-width: none;
+    box-shadow: none;
+  }
+  /* Keep the tick-box columns and the money box from being split across two pages. */
+  .print-keep {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}

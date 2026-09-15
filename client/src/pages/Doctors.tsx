@@ -31,6 +31,8 @@ const emptyForm = {
   joinedDate: toInputDate(new Date()),
   active: true,
   notes: '',
+  credentials: '',
+  onLetterhead: false,
 };
 
 export default function Doctors() {
@@ -69,6 +71,8 @@ export default function Doctors() {
       joinedDate: toInputDate(d.joinedDate),
       active: d.active,
       notes: d.notes || '',
+      credentials: d.credentials || '',
+      onLetterhead: !!d.onLetterhead,
     });
     setOpen(true);
   }
@@ -347,6 +351,30 @@ export default function Doctors() {
               placeholder="Working days, shift timings, salary arrangement…"
             />
           </Field>
+
+          <div className="rounded-xl border border-brand-100 bg-brand-50/50 p-4 sm:col-span-2">
+            <label className="flex items-center gap-2 text-sm font-semibold text-ink-900">
+              <input
+                type="checkbox"
+                checked={form.onLetterhead}
+                onChange={(e) => setForm({ ...form, onLetterhead: e.target.checked })}
+              />
+              Show this doctor on the printed prescription
+            </label>
+            <Field
+              label="Credentials, one per line"
+              className="mt-3"
+              hint="Printed under the doctor's name at the top of the prescription, exactly as typed."
+            >
+              <textarea
+                className="input font-mono !text-xs"
+                rows={4}
+                value={form.credentials}
+                onChange={(e) => setForm({ ...form, credentials: e.target.value })}
+                placeholder={'DPT (MMDC / UHS)\nMS-OMPT (RIU)\nCertified in Dry Needling & Injection Therapy\nClinical Physiotherapist at Bakhtawar Amin Teaching Hospital'}
+              />
+            </Field>
+          </div>
           <div className="flex justify-end gap-2 sm:col-span-2">
             <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>
               Cancel

@@ -16,7 +16,7 @@ import {
 } from '../components/ui';
 import { Diagnosis, Doctor, Patient, Payment, TreatmentPackage, Visit } from '../types';
 import { useSettings } from '../context/SettingsContext';
-import DiagnosisForm from '../components/DiagnosisForm';
+import PrescriptionForm from '../components/PrescriptionForm';
 import { ConditionTemplate } from '../../../shared/conditions';
 import {
   accountPosition,
@@ -418,6 +418,34 @@ function Overview({ patient }: { patient: Patient }) {
   );
 }
 
+/** What was ticked on the three columns, shown as chips so the card reads at a glance. */
+function TickSummary({ d }: { d: Diagnosis }) {
+  const groups: [string, string[], string][] = [
+    ['Diagnosis', d.checkedDiagnoses || [], 'bg-brand-50 text-brand-700'],
+    ['Exercises', d.exercises || [], 'bg-emerald-50 text-emerald-700'],
+    ['Modalities', d.modalities || [], 'bg-violet-50 text-violet-700'],
+  ];
+  const filled = groups.filter(([, items]) => items.length);
+  if (!filled.length) return null;
+
+  return (
+    <div className="mt-3 space-y-1.5">
+      {filled.map(([label, items, tone]) => (
+        <div key={label} className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-semibold uppercase tracking-wide text-ink-400">
+            {label}
+          </span>
+          {items.map((i) => (
+            <span key={i} className={`badge ${tone}`}>
+              {i}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Diagnosis | null>(null);
@@ -445,13 +473,13 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
             setOpen(true);
           }}
         >
-          + Add Diagnosis
+          + New assessment
         </button>
       </div>
 
       {!patient.diagnoses?.length ? (
         <Card>
-          <EmptyState message="No diagnoses recorded yet" />
+          <EmptyState message="No assessments recorded yet" />
         </Card>
       ) : (
         <div className="space-y-4">
@@ -486,10 +514,17 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
                     {d.doctor?.name ? ` · ${d.doctor.name}` : d.doctorName ? ` · ${d.doctorName}` : ''}
                   </div>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex items-center gap-1">
+                  <Link
+                    to={`/patients/${patient.id}/prescription/${d.id}`}
+                    className="btn-secondary !py-1 !text-xs"
+                    title="Open the printable prescription"
+                  >
+                    Print
+                  </Link>
                   <IconButton
                     icon="edit"
-                    label="Edit diagnosis"
+                    label="Edit assessment"
                     onClick={() => {
                       setEditing(d);
                       setOpen(true);
@@ -497,28 +532,59 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
                   />
                   <IconButton
                     icon="trash"
-                    label="Delete diagnosis"
+                    label="Delete assessment"
                     tone="danger"
                     onClick={() => setConfirming(d)}
                   />
                 </div>
               </div>
+              <TickSummary d={d} />
+
               <div className="mt-4 grid gap-4 sm:grid-cols-3">
-                {[
-                  ['Details', d.details],
-                  ['Treatment plan', d.treatmentPlan],
-                  ['Remarks', d.remarks],
-                ].map(([label, value]) => (
-                  <div key={label as string}>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-ink-400">
-                      {label}
+                {(
+                  [
+                    ['History', d.history],
+                    ['Evaluation & examination', d.evaluation],
+                    ['Treatment plan', d.treatmentPlan],
+                    ['Instructions', d.instructions],
+                    ['Referred to', d.referredTo],
+                    ['Medications', d.medications],
+                    ['Lab / radiology', d.labFindings],
+                    ['Details', d.details],
+                    ['Remarks', d.remarks],
+                  ] as [string, string | null | undefined][]
+                )
+                  .filter(([, value]) => value && value.trim())
+                  .map(([label, value]) => (
+                    <div key={label}>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-ink-400">
+                        {label}
+                      </div>
+                      <div className="mt-0.5 whitespace-pre-wrap text-sm text-ink-700">{value}</div>
                     </div>
-                    <div className="mt-0.5 whitespace-pre-wrap text-sm text-ink-700">
-                      {value || '—'}
-                    </div>
-                  </div>
-                ))}
+                  ))}
               </div>
+
+              {!!d.attachments?.length && (
+                <div className="mt-4 border-t border-ink-100 pt-3">
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-400">
+                    Reports &amp; scans
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {d.attachments.map((a) => (
+                      <a
+                        key={a.id}
+                        href={a.dataUrl || `/api/attachments/${a.id}/file`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="badge bg-ink-100 text-ink-700 hover:bg-brand-50 hover:text-brand-700"
+                      >
+                        {a.mimeType === 'application/pdf' ? '📄' : '🖼'} {a.filename}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </Card>
           ))}
         </div>
@@ -526,13 +592,18 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
 
       <ConfirmDialog
         open={!!confirming}
-        title="Delete this diagnosis?"
-        message={<>{confirming?.title} and its clinical notes will be removed from the record.</>}
+        title="Delete this assessment?"
+        message={
+          <>
+            {confirming?.title} and everything written on it — history, examination, prescription
+            and any attached reports — will be removed from the record.
+          </>
+        }
         onCancel={() => setConfirming(null)}
         onConfirm={() => remove(confirming!)}
       />
 
-      <DiagnosisForm
+      <PrescriptionForm
         open={open}
         editing={editing}
         patientId={patient.id}

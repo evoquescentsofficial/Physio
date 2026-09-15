@@ -34,7 +34,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-ink-50">
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 transform bg-gradient-to-b from-brand-900 to-brand-950 text-white transition-transform lg:translate-x-0 ${
+        className={`no-print fixed inset-y-0 left-0 z-40 w-64 transform bg-gradient-to-b from-brand-900 to-brand-950 text-white transition-transform lg:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -86,7 +86,7 @@ export default function Layout() {
       )}
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-ink-100 bg-white/80 px-6 backdrop-blur">
+        <header className="no-print sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-ink-100 bg-white/80 px-6 backdrop-blur">
           <button className="btn-ghost lg:hidden" onClick={() => setOpen(true)}>
             ☰
           </button>

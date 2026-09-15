@@ -1,7 +1,8 @@
 # Physio Fitness Clinic — Patient Management System
 
-A patient management system for physiotherapy clinics: patients, diagnoses, multi-session
-treatment packages, attendance, advances, installments, expenses and profit &amp; loss reporting.
+A patient management system for physiotherapy clinics: patients, printable assessment &
+prescription records, multi-session treatment packages, attendance, advances, installments,
+expenses and profit &amp; loss reporting.
 
 Amounts are shown in Pakistani Rupees (Rs).
 
@@ -17,24 +18,53 @@ Amounts are shown in Pakistani Rupees (Rs).
   attendant matched
 - Per-patient summary: package value, total paid, balance due, session progress
 
-**Diagnoses & treatment**
+**Assessment & prescription**
+
+The clinic's paper prescription pad, digitised. One record holds the whole assessment and
+prints on A4 as the same sheet the clinic has always used.
+
+- **The written sections**, in the order they appear on the paper: History → Initial evaluation
+  & examination → Diagnosis → Treatment plan → Instructions → Referred to → Lab investigations /
+  radiological findings → Medications → Remarks. Blank sections are simply left off the printout
+- **Three tick-box columns** — Diagnosis, Therapeutic exercises, Modalities — with the clinic's
+  standard options. Anything else can be typed straight into the column, and all three lists are
+  editable in Settings, so the pad changes without touching the code
 - **Condition library** of 26 common physiotherapy presentations. Type "slip disc", "back pain"
   or "frozen shoulder" and the matching condition appears; picking it fills the treatment plan
-  with the standard protocol and sets the body region. Anything not in the list can still be
-  typed freely — the library is a shortcut, not a whitelist (`shared/conditions.ts`)
+  with the standard protocol, sets the body region, and ticks the matching box. Anything not in
+  the list can still be typed freely — the library is a shortcut, not a whitelist
+  (`shared/conditions.ts`)
 - A filled plan is never overwritten by a later template pick, and "Reset to the standard plan"
   puts it back if wanted
 - **Structured fields**: body region, side, and a 0–10 pain score at assessment, so the clinic
   can report on what it treats and measure progress against a baseline
-- Attending doctor is picked from the clinic's doctors rather than retyped
-- **Straight into treatment**: after saving a diagnosis from the library, the app offers the
+- **Reports & scans**: attach X-rays, MRI reports and lab results as PDFs or images (up to 10 MB
+  each). They are listed on the record, open in a new tab, and are named on the printout. Files
+  live beside the database on the clinic computer, and are deleted with the record they belong to
+- **Straight into treatment**: after saving an assessment from the library, the app offers the
   package that usually follows it — sessions, frequency and fee pre-filled — and books the whole
   schedule in one click
-- Diagnoses can be linked to treatment packages
+- Assessments can be linked to treatment packages
+
+**Printing the prescription**
+- **Print** on any assessment opens the sheet exactly as it will come out of the printer: the
+  logo and the doctors' credentials across the top, then Name · Date · Age / Sex on one line
+- The three tick-box columns print with every option, ticked or not, so the sheet reads like the
+  pad even where nothing was selected
+- The **sessions already booked** print as a two-column table of dates, and the **Packages** box
+  carries the consultation fee, number of sessions, total, paid and balance — taken from what the
+  system already knows rather than written out again
+- A signature line, the clinic's timings, phone, address, email and social handles finish the
+  sheet. All of it is set in Settings, and the doctors shown are the ones marked "show on
+  prescription"
+- Screen furniture (sidebar, buttons) never reaches the paper, and the tick columns and money box
+  are kept from splitting across two pages
 
 **Doctors**
 - Add the physiotherapists working at the clinic with specialization, qualification, phone,
   email, joining date and notes
+- **Credentials** (one qualification per line) and a "show on prescription" switch decide who
+  appears on the printed letterhead and what is printed under their name
 - Consultation fee is optional — leave it blank when the clinic bills per package rather
   than per doctor
 - Each card shows that doctor's sessions this month and completed sessions all time
@@ -107,8 +137,10 @@ Amounts are shown in Pakistani Rupees (Rs).
 - Profit &amp; loss statement with margins and totals, exportable as CSV
 
 **Settings**
-- Clinic name, phone and address (shown throughout the app)
+- Clinic name, phone, address and email (shown throughout the app and on the prescription)
 - Default checkup fee and default session fee, so staff type less
+- Everything printed on the prescription: its heading, the clinic's timings, website and
+  Instagram, and the contents of all three tick-box columns
 
 **Access control**
 - JWT authentication with Admin / Doctor / Receptionist roles
@@ -198,12 +230,13 @@ the original sample data.
 server/
   prisma/schema.prisma      data model
   prisma/seed.ts            seeds the initial admin user
-  src/routes/               auth, patients, doctors, diagnoses, packages, visits, payments,
-                            expenses, reports, settings
+  src/routes/               auth, patients, doctors, diagnoses, attachments, packages, visits,
+                            payments, expenses, reports, settings
+  uploads/                  attached reports and scans (not in version control)
   src/middleware/           JWT auth, role guards, error handling
 client/
-  src/pages/                Login, Dashboard, Patients, PatientDetail, Sessions, Doctors,
-                            Payments, Expenses, Reports, Settings
+  src/pages/                Login, Dashboard, Patients, PatientDetail, Prescription, Sessions,
+                            Doctors, Payments, Expenses, Reports, Settings
   src/components/           Layout (sidebar nav) and shared UI primitives
   src/context/              auth state and clinic settings
   src/api/                  API client, plus the in-browser store used by the demo build
@@ -222,7 +255,10 @@ All routes except `POST /api/auth/login` require an `Authorization: Bearer <toke
 | POST   | `/api/doctors`                      | Add a doctor                                |
 | DELETE | `/api/doctors/:id`                  | Remove, or deactivate if they have sessions |
 | GET    | `/api/patients/:id`                 | Full patient record with all relations      |
-| POST   | `/api/diagnoses`                    | Add a diagnosis                             |
+| POST   | `/api/diagnoses`                    | Save an assessment & prescription           |
+| GET    | `/api/diagnoses/:id`                | One assessment with its attachments         |
+| POST   | `/api/attachments`                  | Attach a report or scan (multipart)         |
+| GET    | `/api/attachments/:id/file`         | Open an attached file                       |
 | POST   | `/api/packages`                     | Create a package (optionally auto-scheduling sessions and installments) |
 | POST   | `/api/packages/:id/installments`    | Add an installment                          |
 | POST   | `/api/packages/:id/extend`          | Book more sessions, optionally billing them |

@@ -5,6 +5,12 @@
  * Uses a fixed-seed pseudo-random generator so every visitor sees the same numbers.
  */
 import { DemoDb } from './demoTypes';
+import {
+  DEFAULT_DIAGNOSIS_OPTIONS,
+  DEFAULT_EXERCISE_OPTIONS,
+  DEFAULT_FORM_TITLE,
+  DEFAULT_MODALITY_OPTIONS,
+} from '../../../shared/prescription';
 
 const id = (() => {
   let n = 0;
@@ -85,6 +91,115 @@ const CONDITIONS: [string, string][] = [
   ['Rotator cuff tendinitis', 'Painful arc on overhead movement.'],
 ];
 
+/**
+ * What a filled-in prescription pad actually says, one per condition above. Without this the
+ * demo prints an empty form, which shows nothing about how the record works.
+ */
+const ASSESSMENTS: {
+  history: string;
+  evaluation: string;
+  diagnoses: string[];
+  exercises: string[];
+  modalities: string[];
+  instructions: string;
+  lab?: string;
+  medications?: string;
+  referredTo?: string;
+}[] = [
+  {
+    history:
+      'Gradual onset over 3 months, worse after long hours at a desk. No trauma. Pain radiates to the left leg on sitting.',
+    evaluation:
+      'Lumbar flexion restricted to 40°, SLR positive at 45° on the left, tenderness over L4-L5, no neurological deficit.',
+    diagnoses: ['Low Back Pain', 'Sciatica'],
+    exercises: ['Stretching', 'Spinal Stabilisation', 'Postural Alignment'],
+    modalities: ['TENS', 'Hot Pack', 'Traction — Lumbar'],
+    instructions:
+      'Avoid lifting over 5 kg. Use a lumbar roll when sitting. Walk 20 minutes daily. Home exercises twice a day.',
+    lab: 'MRI lumbar spine: L4-L5 disc bulge with mild left foraminal narrowing.',
+    medications: 'Tab. Naproxen 250 mg twice daily after meals for 5 days.',
+  },
+  {
+    history:
+      'Right shoulder stiffness for 5 months, worst at night, unable to reach behind the back. Known diabetic.',
+    evaluation:
+      'Capsular pattern: abduction 80°, external rotation 15°. Painful arc absent. Strength preserved.',
+    diagnoses: ['Frozen Shoulder'],
+    exercises: ['Passive Movements', 'Mobilisation', 'Stretching'],
+    modalities: ['Ultrasound', 'Hot Pack'],
+    instructions:
+      'Pendulum exercises 3 times daily. Wall climbing to tolerance. Keep blood sugar controlled — recovery is slower otherwise.',
+  },
+  {
+    history: 'Both knees painful on stairs for 2 years, morning stiffness under 30 minutes.',
+    evaluation: 'Crepitus both knees, quadriceps wasting, flexion 110° right and 115° left.',
+    diagnoses: ['Knee Pain', 'Arthritis'],
+    exercises: ['Active Therapy', 'Cardio Vascular Therapy', 'Stretching'],
+    modalities: ['TENS', 'Hot Pack', 'EMS'],
+    instructions: 'Quadriceps strengthening daily. Avoid squatting and stairs where possible. Weight reduction advised.',
+    lab: 'X-ray both knees: Grade 2 changes, joint space narrowing medially.',
+  },
+  {
+    history: 'Neck stiffness with headaches for 6 weeks, worse after screen work.',
+    evaluation: 'Cervical rotation 50° bilaterally, tenderness over C5-C6 paraspinals, Spurling negative.',
+    diagnoses: ['Cervical Pain'],
+    exercises: ['Postural Alignment', 'Stretching', 'Mobilisation'],
+    modalities: ['Traction — Cervical', 'Hot Pack', 'Ultrasound'],
+    instructions: 'Screen at eye level. Chin tucks hourly. No pillow stacking at night.',
+  },
+  {
+    history: 'Ankle fracture 6 weeks ago, cast removed last week. Walking with a limp.',
+    evaluation: 'Dorsiflexion 5°, swelling around the lateral malleolus, single-leg stance not achieved.',
+    diagnoses: [],
+    exercises: ['Passive Movements', 'Active Therapy', 'Stretching'],
+    modalities: ['Ultrasound', 'Cold Pack'],
+    instructions: 'Elevate the ankle when resting. Full weight bearing as pain allows. Ice 10 minutes after exercises.',
+    referredTo: 'Orthopaedic surgeon for 8-week review',
+  },
+  {
+    history: 'Shooting pain from the left hip to the calf on prolonged sitting, 6 weeks.',
+    evaluation: 'SLR positive at 40° left, slump test positive, ankle reflexes intact.',
+    diagnoses: ['Sciatica', 'Low Back Pain'],
+    exercises: ['Stretching', 'Spinal Stabilisation'],
+    modalities: ['TENS', 'Traction — Lumbar', 'Hot Pack'],
+    instructions: 'Stand and move every 30 minutes. Nerve glide exercises twice daily.',
+  },
+  {
+    history: 'Right elbow pain on gripping for 2 months. Works as a mechanic.',
+    evaluation: 'Tender over the lateral epicondyle, resisted wrist extension painful, grip strength reduced.',
+    diagnoses: [],
+    exercises: ['Stretching', 'Active Therapy'],
+    modalities: ['Ultrasound', 'Taping', 'Cold Pack'],
+    instructions: 'Counterforce brace at work. Eccentric wrist extensor exercises daily. Avoid heavy gripping for 3 weeks.',
+  },
+  {
+    history: 'Stroke 4 months ago with left-sided weakness. Walking indoors with a stick.',
+    evaluation: 'Left hip flexion grade 3, knee extension grade 3+, ankle dorsiflexion grade 2. Balance impaired.',
+    diagnoses: ['Stroke'],
+    exercises: ['Active Therapy', 'Postural Alignment', 'Cardio Vascular Therapy'],
+    modalities: ['EMS'],
+    instructions: 'Practise sit-to-stand 10 times, 3 times a day, with supervision. Continue the stick outdoors.',
+    medications: 'Continuing as prescribed by the neurologist.',
+    referredTo: 'Neurologist for 6-month review',
+  },
+  {
+    history: 'Heel pain worst on the first steps in the morning, 3 months.',
+    evaluation: 'Tender over the medial calcaneal tubercle, tight tendo-achilles, windlass test positive.',
+    diagnoses: [],
+    exercises: ['Stretching', 'Active Therapy'],
+    modalities: ['Ultrasound', 'Cold Pack', 'Taping'],
+    instructions: 'Calf and plantar fascia stretches before getting out of bed. Cushioned footwear indoors. Ice bottle roll at night.',
+  },
+  {
+    history: 'Right shoulder pain on overhead movement for 2 months, no trauma.',
+    evaluation: 'Painful arc 70-110°, empty can test positive, external rotation strength grade 4.',
+    diagnoses: ['Frozen Shoulder'],
+    exercises: ['Active Therapy', 'Mobilisation', 'Stretching'],
+    modalities: ['Ultrasound', 'Hot Pack', 'Taping'],
+    instructions: 'Avoid overhead work for 2 weeks. Rotator cuff strengthening with a band, daily.',
+  },
+];
+
 export function buildDemoDb(): DemoDb {
   const random = makeRandom(20260811);
 
@@ -92,10 +207,18 @@ export function buildDemoDb(): DemoDb {
     settings: {
       id: 'clinic',
       clinicName: 'Physio Fitness Clinic',
-      phone: '0300-1234567',
-      address: 'Main Boulevard, Lahore',
+      phone: '0301-8737071 / 0342-7076622',
+      address: '299-B Block Shah Rukn-e-Alam Colony, Multan',
       checkupFee: 1000,
       defaultSessionFee: 1500,
+      email: 'aj.physio32@gmail.com',
+      website: 'www.fb.com/physiofitnesscentre',
+      instagram: '@physio_fitness_centre',
+      timings: '6pm to 9pm (Monday to Saturday) · Sunday closed',
+      formTitle: DEFAULT_FORM_TITLE,
+      diagnosisOptions: DEFAULT_DIAGNOSIS_OPTIONS,
+      exerciseOptions: DEFAULT_EXERCISE_OPTIONS,
+      modalityOptions: DEFAULT_MODALITY_OPTIONS,
     },
     patients: [],
     doctors: [],
@@ -105,14 +228,29 @@ export function buildDemoDb(): DemoDb {
     visits: [],
     payments: [],
     expenses: [],
+    attachments: [],
   };
 
-  const doctorSeed: [string, string, string, number | null][] = [
-    ['Dr. Imran Shah', 'Orthopaedic physiotherapy', 'DPT, MSPT', 1500],
-    ['Dr. Sana Aslam', 'Sports injury rehabilitation', 'DPT', 1200],
-    ['Dr. Farhan Qureshi', 'Neurological physiotherapy', 'DPT, PhD', null],
+  // The last two columns are the credentials block printed on the prescription, and whether
+  // this doctor appears on it at all.
+  const doctorSeed: [string, string, string, number | null, string | null][] = [
+    [
+      'Dr. Imran Shah',
+      'Orthopaedic physiotherapy',
+      'DPT, MSPT',
+      1500,
+      'DPT (MMDC / UHS)\nMS-OMPT (RIU)\nCertified in Dry Needling & Injection Therapy\nClinical Physiotherapist at Bakhtawar Amin Teaching Hospital',
+    ],
+    [
+      'Dr. Sana Aslam',
+      'Sports injury rehabilitation',
+      'DPT',
+      1200,
+      'DPT (MMDC / UHS)\nCertified in Dry Needling & Injection Therapy\nClinical Physiotherapist at Ibn-e-Sina Hospital',
+    ],
+    ['Dr. Farhan Qureshi', 'Neurological physiotherapy', 'DPT, PhD', null, null],
   ];
-  doctorSeed.forEach(([name, specialization, qualification, fee], i) => {
+  doctorSeed.forEach(([name, specialization, qualification, fee, credentials], i) => {
     db.doctors.push({
       id: id('doc_'),
       name,
@@ -124,6 +262,8 @@ export function buildDemoDb(): DemoDb {
       joinedDate: monthsAgo(10 + i * 4, 1).toISOString(),
       active: true,
       notes: null,
+      credentials,
+      onLetterhead: !!credentials,
     });
   });
 
@@ -140,7 +280,8 @@ export function buildDemoDb(): DemoDb {
       phone,
       email: null,
       address: 'Lahore',
-      dob: null,
+      // Ages spread across a real caseload, so the printed form has an age on it.
+      dob: new Date(Date.UTC(1962 + idx * 2, (idx * 5) % 12, 4 + (idx % 24))).toISOString(),
       gender,
       occupation,
       referredBy: idx % 3 === 0 ? 'Dr. Saleem' : null,
@@ -167,6 +308,7 @@ export function buildDemoDb(): DemoDb {
     });
 
     const condition = CONDITIONS[idx % CONDITIONS.length];
+    const assessment = ASSESSMENTS[idx % ASSESSMENTS.length];
     const diagnosisId = id('dia_');
     db.diagnoses.push({
       id: diagnosisId,
@@ -181,6 +323,15 @@ export function buildDemoDb(): DemoDb {
       bodyRegion: ['Lower back', 'Shoulder', 'Knee', 'Neck', 'Ankle & foot'][idx % 5],
       side: ['Left', 'Right', 'Both', 'Not applicable'][idx % 4],
       painScore: 4 + (idx % 5),
+      history: assessment.history,
+      evaluation: assessment.evaluation,
+      instructions: assessment.instructions,
+      referredTo: assessment.referredTo || null,
+      labFindings: assessment.lab || null,
+      medications: assessment.medications || null,
+      checkedDiagnoses: assessment.diagnoses,
+      exercises: assessment.exercises,
+      modalities: assessment.modalities,
     });
 
     // the two newest patients are checkup-only so far — no package yet

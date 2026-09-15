@@ -11,6 +11,7 @@ import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Doctors from './pages/Doctors';
+import Prescription from './pages/Prescription';
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -38,6 +39,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="patients" element={<Patients />} />
         <Route path="patients/:id" element={<PatientDetail />} />
+        <Route path="patients/:id/prescription/:diagnosisId" element={<Prescription />} />
         <Route path="sessions" element={<Sessions />} />
         <Route path="doctors" element={<Doctors />} />
         <Route path="payments" element={<Payments />} />

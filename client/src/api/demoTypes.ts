@@ -5,6 +5,14 @@ export interface DemoSettings {
   address: string | null;
   checkupFee: number;
   defaultSessionFee: number;
+  email?: string | null;
+  website?: string | null;
+  instagram?: string | null;
+  timings?: string | null;
+  formTitle?: string | null;
+  diagnosisOptions?: string[];
+  exerciseOptions?: string[];
+  modalityOptions?: string[];
 }
 
 export interface DemoPatient {
@@ -38,6 +46,28 @@ export interface DemoDiagnosis {
   bodyRegion?: string | null;
   side?: string | null;
   painScore?: number | null;
+  history?: string | null;
+  evaluation?: string | null;
+  instructions?: string | null;
+  referredTo?: string | null;
+  labFindings?: string | null;
+  medications?: string | null;
+  checkedDiagnoses?: string[];
+  exercises?: string[];
+  modalities?: string[];
+}
+
+export interface DemoAttachment {
+  id: string;
+  patientId: string;
+  diagnosisId: string | null;
+  filename: string;
+  mimeType: string;
+  size: number;
+  label: string | null;
+  uploadedAt: string;
+  /** The file itself, held in this browser — the demo has no clinic computer to put it on. */
+  dataUrl: string;
 }
 
 export interface DemoPackage {
@@ -76,6 +106,8 @@ export interface DemoDoctor {
   joinedDate: string | null;
   active: boolean;
   notes: string | null;
+  credentials?: string | null;
+  onLetterhead?: boolean;
 }
 
 export interface DemoVisit {
@@ -130,4 +162,5 @@ export interface DemoDb {
   doctors: DemoDoctor[];
   payments: DemoPayment[];
   expenses: DemoExpense[];
+  attachments: DemoAttachment[];
 }

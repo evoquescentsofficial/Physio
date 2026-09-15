@@ -4,6 +4,8 @@ import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ADMIN_ONLY, requireAuth } from '../middleware/auth';
 import { installmentStatus } from '../../../shared/money';
+import { fromRow as fromDiagnosisRow } from './diagnoses.routes';
+import { deleteStoredFilesFor } from './attachments.routes';
 
 const router = Router();
 router.use(requireAuth);
@@ -78,7 +80,10 @@ router.get(
       include: {
         diagnoses: {
           orderBy: { date: 'desc' },
-          include: { doctor: { select: { id: true, name: true } } },
+          include: {
+            doctor: { select: { id: true, name: true } },
+            attachments: { orderBy: { uploadedAt: 'asc' } },
+          },
         },
         packages: {
           orderBy: { createdAt: 'desc' },
@@ -98,8 +103,11 @@ router.get(
     if (!patient) return res.status(404).json({ error: 'Patient not found' });
 
     // OVERDUE is a fact about today rather than a stored state, so it is derived on read.
+    // The prescription's tick-box columns come back as arrays rather than the JSON text
+    // they are stored as, so no screen has to know how that column works.
     res.json({
       ...patient,
+      diagnoses: patient.diagnoses.map(fromDiagnosisRow),
       packages: patient.packages.map((pkg) => ({
         ...pkg,
         installments: pkg.installments.map((i) => ({ ...i, status: installmentStatus(i) })),
@@ -139,6 +147,7 @@ router.delete(
   '/:id',
   ADMIN_ONLY,
   asyncHandler(async (req, res) => {
+    await deleteStoredFilesFor({ patientId: req.params.id });
     await prisma.patient.delete({ where: { id: req.params.id } });
     res.status(204).end();
   })
