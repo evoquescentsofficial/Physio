@@ -149,16 +149,16 @@ export default function Sessions() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+              <thead className="border-b border-ink-100 bg-ink-50/60 text-left">
                 <tr>
-                  <th className="px-5 py-3 font-semibold">Date</th>
-                  <th className="px-5 py-3 font-semibold">Patient</th>
-                  <th className="px-5 py-3 font-semibold">Doctor</th>
-                  <th className="px-5 py-3 font-semibold">Package</th>
-                  <th className="px-5 py-3 font-semibold">Session</th>
-                  <th className="px-5 py-3 font-semibold">Fee</th>
-                  <th className="px-5 py-3 font-semibold">Attendance</th>
-                  <th className="px-5 py-3 text-right font-semibold">Actions</th>
+                  <th className="th">Date</th>
+                  <th className="th">Patient</th>
+                  <th className="th">Doctor</th>
+                  <th className="th">Package</th>
+                  <th className="th">Session</th>
+                  <th className="th">Fee</th>
+                  <th className="th">Attendance</th>
+                  <th className="th text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">

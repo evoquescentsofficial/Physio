@@ -19,6 +19,7 @@ import { Card, EmptyState, currency, formatDate } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { DuePayment, Visit } from '../types';
+import NavIcon, { NavIconName } from '../components/NavIcon';
 import { CYCLE_LABELS, isRecurring } from '../../../shared/packages';
 
 interface DashboardData {
@@ -138,7 +139,7 @@ function Kpi({
   value: string | number;
   hint?: string;
   tone?: 'brand' | 'emerald' | 'amber' | 'red' | 'violet';
-  icon: string;
+  icon: NavIconName;
   to?: string;
 }) {
   const tones: Record<string, { bar: string; chip: string; text: string }> = {
@@ -157,11 +158,13 @@ function Kpi({
   const body = (
     <div className="group relative flex h-full items-start gap-4 overflow-hidden rounded-2xl border border-ink-100 bg-white p-5 shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-card">
       <span className={`absolute inset-y-0 left-0 w-1 ${t.bar}`} />
-      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg ${t.chip}`}>
-        {icon}
+      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${t.chip}`}>
+        <NavIcon name={icon} className="h-[19px] w-[19px]" />
       </div>
       <div className="min-w-0">
-        <div className="text-xs font-semibold uppercase tracking-wide text-ink-400">{label}</div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.055em] text-ink-400">
+          {label}
+        </div>
         <div className={`mt-1 truncate text-2xl font-bold tabular-nums ${t.text}`}>{value}</div>
         {hint && <div className="mt-0.5 text-xs text-ink-400">{hint}</div>}
       </div>
@@ -256,14 +259,14 @@ export default function Dashboard() {
           label="Revenue this month"
           value={data ? currency(data.monthRevenue) : '—'}
           tone="emerald"
-          icon="₨"
+          icon="payments"
           to="/payments"
         />
         <Kpi
           label="Expenses this month"
           value={data ? currency(data.monthExpenses) : '—'}
           tone="amber"
-          icon="▤"
+          icon="expenses"
           to="/expenses"
         />
         <Kpi
@@ -271,7 +274,7 @@ export default function Dashboard() {
           value={data ? currency(data.monthProfit) : '—'}
           tone={data && data.monthProfit < 0 ? 'red' : 'emerald'}
           hint={data && data.monthProfit < 0 ? 'Running at a loss' : 'In profit'}
-          icon="◔"
+          icon="trend"
           to="/reports"
         />
         <Kpi
@@ -279,7 +282,7 @@ export default function Dashboard() {
           value={data ? currency(data.outstandingDues) : '—'}
           tone="red"
           hint={data?.patientCredits ? `${currency(data.patientCredits)} held as credit` : undefined}
-          icon="!"
+          icon="alert"
           to="/payments"
         />
       </div>
@@ -294,21 +297,21 @@ export default function Dashboard() {
           label="Total patients"
           value={data?.totalPatients ?? '—'}
           tone="brand"
-          icon="☰"
+          icon="patients"
           to="/patients"
         />
         <Kpi
           label="Active packages"
           value={data?.activePackages ?? '—'}
           tone="violet"
-          icon="▦"
+          icon="package"
         />
         <Kpi
           label="Overdue sessions"
           value={data?.overduePendingSessions ?? '—'}
           tone={data?.overduePendingSessions ? 'amber' : 'brand'}
           hint="Missed or unmarked — can be carried forward"
-          icon="↻"
+          icon="carry"
           to="/sessions"
         />
       </div>

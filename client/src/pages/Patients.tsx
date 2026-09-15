@@ -135,14 +135,14 @@ export default function Patients() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+              <thead className="border-b border-ink-100 bg-ink-50/60 text-left">
                 <tr>
-                  <th className="px-5 py-3 font-semibold">Name</th>
-                  <th className="px-5 py-3 font-semibold">Phone</th>
-                  <th className="px-5 py-3 font-semibold">Email</th>
-                  <th className="px-5 py-3 font-semibold">Registered</th>
-                  <th className="px-5 py-3 font-semibold">Sessions</th>
-                  <th className="px-5 py-3 font-semibold text-right">Actions</th>
+                  <th className="th">Name</th>
+                  <th className="th">Phone</th>
+                  <th className="th">Email</th>
+                  <th className="th">Registered</th>
+                  <th className="th">Sessions</th>
+                  <th className="th text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">

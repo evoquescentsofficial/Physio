@@ -812,13 +812,13 @@ function PaymentPlan({
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-ink-400">
+            <thead className="border-b border-ink-100 text-left">
               <tr>
-                <th className="py-2">Payment</th>
-                <th className="py-2">Due date</th>
-                <th className="py-2">Amount</th>
-                <th className="py-2">Status</th>
-                <th className="py-2 text-right">Action</th>
+                <th className="th !px-0 !py-2">Payment</th>
+                <th className="th !px-0 !py-2">Due date</th>
+                <th className="th !px-0 !py-2">Amount</th>
+                <th className="th !px-0 !py-2">Status</th>
+                <th className="th !px-0 !py-2 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-100">
@@ -2062,15 +2062,15 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+              <thead className="border-b border-ink-100 bg-ink-50/60 text-left">
                 <tr>
-                  <th className="px-5 py-3 font-semibold">Date</th>
-                  <th className="px-5 py-3 font-semibold">Session</th>
-                  <th className="px-5 py-3 font-semibold">Doctor</th>
-                  <th className="px-5 py-3 font-semibold">Fee</th>
-                  <th className="px-5 py-3 font-semibold">Attendance</th>
-                  <th className="px-5 py-3 font-semibold">Treatment notes</th>
-                  <th className="px-5 py-3 text-right font-semibold">Mark</th>
+                  <th className="th">Date</th>
+                  <th className="th">Session</th>
+                  <th className="th">Doctor</th>
+                  <th className="th">Fee</th>
+                  <th className="th">Attendance</th>
+                  <th className="th">Treatment notes</th>
+                  <th className="th text-right">Mark</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
@@ -2462,14 +2462,14 @@ function Payments({ patient, reload }: { patient: Patient; reload: () => void })
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+              <thead className="border-b border-ink-100 bg-ink-50/60 text-left">
                 <tr>
-                  <th className="px-5 py-3 font-semibold">Date</th>
-                  <th className="px-5 py-3 font-semibold">Type</th>
-                  <th className="px-5 py-3 font-semibold">Method</th>
-                  <th className="px-5 py-3 font-semibold">Amount</th>
-                  <th className="px-5 py-3 font-semibold">Notes</th>
-                  <th className="px-5 py-3 text-right font-semibold">Action</th>
+                  <th className="th">Date</th>
+                  <th className="th">Type</th>
+                  <th className="th">Method</th>
+                  <th className="th">Amount</th>
+                  <th className="th">Notes</th>
+                  <th className="th text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">

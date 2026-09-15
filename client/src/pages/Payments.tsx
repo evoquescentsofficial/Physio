@@ -113,13 +113,13 @@ export default function Payments() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+                <thead className="border-b border-ink-100 bg-ink-50/60 text-left">
                   <tr>
-                    <th className="px-5 py-3 font-semibold">Date</th>
-                    <th className="px-5 py-3 font-semibold">Patient</th>
-                    <th className="px-5 py-3 font-semibold">Type</th>
-                    <th className="px-5 py-3 font-semibold">Method</th>
-                    <th className="px-5 py-3 text-right font-semibold">Amount</th>
+                    <th className="th">Date</th>
+                    <th className="th">Patient</th>
+                    <th className="th">Type</th>
+                    <th className="th">Method</th>
+                    <th className="th text-right">Amount</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-ink-100">

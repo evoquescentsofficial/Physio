@@ -118,16 +118,16 @@ export default function DoctorEarningsPanel({ onPaid }: { onPaid: () => void }) 
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+            <thead className="border-b border-ink-100 bg-ink-50/60 text-left">
               <tr>
-                <th className="px-5 py-3 font-semibold">Doctor</th>
-                <th className="px-5 py-3 font-semibold">Sessions</th>
-                <th className="px-5 py-3 font-semibold">Billed</th>
-                <th className="px-5 py-3 font-semibold">Their share</th>
-                <th className="px-5 py-3 font-semibold">Clinic keeps</th>
-                <th className="px-5 py-3 font-semibold">Took at the chair</th>
-                <th className="px-5 py-3 font-semibold">Already paid</th>
-                <th className="px-5 py-3 font-semibold">Settlement</th>
+                <th className="th">Doctor</th>
+                <th className="th">Sessions</th>
+                <th className="th">Billed</th>
+                <th className="th">Their share</th>
+                <th className="th">Clinic keeps</th>
+                <th className="th">Took at the chair</th>
+                <th className="th">Already paid</th>
+                <th className="th">Settlement</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>

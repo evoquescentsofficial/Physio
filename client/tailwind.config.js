@@ -4,8 +4,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        // system stack: no webfont download, so the app renders instantly offline
+        // Inter first, then the system stack — offline the app still renders instantly
         sans: [
+          'Inter',
           'ui-sans-serif',
           'system-ui',
           '-apple-system',
