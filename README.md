@@ -118,13 +118,24 @@ prints on A4 as the same sheet the clinic has always used.
 - Cancel a session (keeps the record) or delete it outright; deletion is refused when a
   payment is attached to it, so the money trail cannot be orphaned
 
-**Attendance & carry-forward**
-- Mark each scheduled session Present / Absent / Cancelled on the day it was scheduled
-- Carry forward a single missed session to a new date, from the patient's own session list or the
-  clinic-wide sessions page — the date defaults to after everything else already booked, so a
-  session missed mid-course is picked up at the end of it
-- Bulk carry-forward: move all of a package's overdue pending sessions into next month at a chosen
-  frequency — the original is marked `CARRIED_FORWARD` so history is never lost
+**Attendance & moving a session**
+- Mark each scheduled session Present / Absent / Cancelled. The buttons carry the state — the lit
+  one is what happened — so the row says it once rather than twice
+- **A session that moves is still the same session.** Session 7 that the patient missed and
+  rebooked is session 7 on another day, not session 11. The replacement keeps the number, and the
+  course stays the size it was sold as (`shared/sessions.ts`)
+- **Both halves stay on the record**: the original keeps its place in the history, struck through
+  and marked *→ moved to 15 Dec*, and the replacement says *moved from 16 Sept*. A session moved
+  more than once reads *attempt 2 of 3*, so two rows with the same number can never be mistaken
+  for two different sessions
+- **Counted once.** A moved session does not inflate anything: not the package's progress, not
+  "sessions booked", not the clinic-wide tallies. The session list opens with the count stated —
+  *8 of 8 done · 1 upcoming · 1 moved to another day* — rather than leaving it to be worked out
+  from the table
+- **Only what can move, moves.** A session that already happened, was already moved, or was
+  cancelled cannot be moved, and the app says why rather than offering a button that fails
+- A session already paid for stays paid for when it moves, so nobody is charged twice
+- Bulk move: send all of a package's overdue sessions into next month at a chosen frequency
 - Quick filters: today, this week, this month, all overdue pending
 
 **The payment plan**

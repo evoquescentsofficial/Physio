@@ -11,6 +11,7 @@ import {
   isRecurring,
   planCycles,
 } from '../../../shared/packages';
+import { nextSessionNumber } from '../../../shared/sessions';
 
 const router = Router();
 router.use(requireAuth);
@@ -276,12 +277,13 @@ router.post(
     const fee = data.feePerSession ?? pkg.feePerSession;
     const startDate = new Date(data.startDate);
 
-    const last = await prisma.visit.findFirst({
+    // Numbered from the sessions that still hold a place, so a course that has had a session
+    // moved does not start its extra sessions a number too high.
+    const existing = await prisma.visit.findMany({
       where: { packageId: pkg.id },
-      orderBy: { sessionNumber: 'desc' },
-      select: { sessionNumber: true },
+      select: { sessionNumber: true, attendance: true, scheduledDate: true },
     });
-    const firstNumber = (last?.sessionNumber ?? 0) + 1;
+    const firstNumber = nextSessionNumber(existing);
 
     const visits = Array.from({ length: data.extraSessions }).map((_, i) => {
       const scheduledDate = new Date(startDate);

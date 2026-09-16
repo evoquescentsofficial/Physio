@@ -3,6 +3,11 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
 import { requireAuth } from '../middleware/auth';
+import {
+  canCarryForward,
+  carryForwardBlockedReason,
+  nextSessionNumber,
+} from '../../../shared/sessions';
 
 const router = Router();
 router.use(requireAuth);
@@ -58,15 +63,16 @@ router.post(
     const { count, frequencyDays, ...data } = visitSchema.parse(req.body);
     const startDate = new Date(data.scheduledDate);
 
-    // Continue the package's existing numbering rather than restarting at 1.
+    // Continue the package's existing numbering rather than restarting at 1. Carried-forward
+    // and cancelled rows are skipped: a moved session is still the same session of the course,
+    // so it must not push the next one up a number.
     let nextNumber = data.sessionNumber ?? null;
     if (nextNumber == null && data.packageId) {
-      const last = await prisma.visit.findFirst({
+      const existing = await prisma.visit.findMany({
         where: { packageId: data.packageId },
-        orderBy: { sessionNumber: 'desc' },
-        select: { sessionNumber: true },
+        select: { sessionNumber: true, attendance: true, scheduledDate: true },
       });
-      nextNumber = (last?.sessionNumber ?? 0) + 1;
+      nextNumber = nextSessionNumber(existing);
     }
 
     const visits = Array.from({ length: count }).map((_, i) => {
@@ -140,6 +146,21 @@ router.post(
     const source = await prisma.visit.findUnique({ where: { id: req.params.id } });
     if (!source) return res.status(404).json({ error: 'Visit not found' });
 
+    // Moving a session that already happened would invent a second one out of nothing, and
+    // moving one that was already moved would fork the chain into two live sessions.
+    if (!canCarryForward(source)) {
+      return res.status(409).json({ error: carryForwardBlockedReason(source) });
+    }
+
+    const target = new Date(newDate);
+    const sameDay =
+      target.toISOString().slice(0, 10) === source.scheduledDate.toISOString().slice(0, 10);
+    if (sameDay) {
+      return res.status(400).json({
+        error: 'That is the day it is already booked for. Pick a different date to move it to.',
+      });
+    }
+
     const [, newVisit] = await prisma.$transaction([
       prisma.visit.update({
         where: { id: source.id },
@@ -151,12 +172,18 @@ router.post(
           packageId: source.packageId,
           diagnosisId: source.diagnosisId,
           doctorId: source.doctorId,
+          // The replacement is the same session of the course, on another day.
           sessionNumber: source.sessionNumber,
-          scheduledDate: new Date(newDate),
+          scheduledDate: target,
           type: source.type,
           fee: source.fee,
+          // A session already paid for stays paid for; the patient must not be charged twice
+          // because the appointment moved.
+          feeCollected: source.feeCollected,
           carriedFromId: source.id,
-          remarks: `Carried forward from ${source.scheduledDate.toDateString()}`,
+          // Where it came from is in carriedFromId; remarks belong to the clinician.
+          remarks: source.remarks,
+          treatmentNotes: source.treatmentNotes,
         },
       }),
     ]);
@@ -212,8 +239,10 @@ router.post(
               scheduledDate,
               type: source.type,
               fee: source.fee,
+              feeCollected: source.feeCollected,
               carriedFromId: source.id,
-              remarks: `Carried forward from ${source.scheduledDate.toDateString()}`,
+              remarks: source.remarks,
+              treatmentNotes: source.treatmentNotes,
             },
           })
         );

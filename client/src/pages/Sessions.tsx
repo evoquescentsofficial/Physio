@@ -13,6 +13,7 @@ import {
   toInputDate,
 } from '../components/ui';
 import { Doctor, Visit } from '../types';
+import { canCarryForward, holdsAPlace } from '../../../shared/sessions';
 
 export default function Sessions() {
   const today = toInputDate(new Date());
@@ -49,11 +50,15 @@ export default function Sessions() {
     load();
   }
 
+  // Rows that were moved to another day are history: the replacement is the live session, so
+  // counting both would report more sessions than the clinic actually has.
+  const live = visits.filter(holdsAPlace);
   const counts = {
-    total: visits.length,
-    present: visits.filter((v) => v.attendance === 'PRESENT').length,
-    absent: visits.filter((v) => v.attendance === 'ABSENT').length,
-    scheduled: visits.filter((v) => v.attendance === 'SCHEDULED').length,
+    total: live.length,
+    present: live.filter((v) => v.attendance === 'PRESENT').length,
+    absent: live.filter((v) => v.attendance === 'ABSENT').length,
+    scheduled: live.filter((v) => v.attendance === 'SCHEDULED').length,
+    moved: visits.length - live.length,
   };
 
   function quickRange(kind: 'today' | 'week' | 'month' | 'overdue') {
@@ -215,9 +220,11 @@ export default function Sessions() {
                       >
                         Absent
                       </button>
-                      <button className="btn-ghost !py-1" onClick={() => setCarryVisit(v)}>
-                        Carry fwd
-                      </button>
+                      {canCarryForward(v) && (
+                        <button className="btn-ghost !py-1" onClick={() => setCarryVisit(v)}>
+                          Move date
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

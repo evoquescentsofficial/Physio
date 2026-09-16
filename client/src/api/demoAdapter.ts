@@ -11,6 +11,11 @@ import { DemoDb } from './demoTypes';
 import { accountPosition, installmentStatus, netAmount, splitInstallments } from '../../../shared/money';
 import { addCycles, frequencyForCycle, isRecurring, planCycles } from '../../../shared/packages';
 import { computeDoctorEarnings, salaryPeriod, salaryTag } from '../../../shared/commission';
+import {
+  canCarryForward,
+  carryForwardBlockedReason,
+  nextSessionNumber,
+} from '../../../shared/sessions';
 
 // Bump when the stored shape changes, so browsers holding an older demo database
 // rebuild it instead of crashing on fields that did not exist then.
@@ -600,10 +605,9 @@ function handle(method: string, path: string, params: any, body: any): any {
       const fee = body.feePerSession ?? pkg.feePerSession;
       const start = new Date(body.startDate);
       const freq = Math.max(1, body.frequencyDays || 2);
-      const numbers = db.visits
-        .filter((v) => v.packageId === pkg.id)
-        .map((v) => v.sessionNumber || 0);
-      const firstNumber = (numbers.length ? Math.max(...numbers) : 0) + 1;
+      // Numbered from the sessions that still hold a place — a moved session must not push
+      // the next one up a number.
+      const firstNumber = nextSessionNumber(db.visits.filter((v) => v.packageId === pkg.id));
 
       for (let i = 0; i < body.extraSessions; i++) {
         const d = new Date(start);
@@ -854,13 +858,11 @@ function handle(method: string, path: string, params: any, body: any): any {
       const frequencyDays = Math.max(1, body.frequencyDays || 2);
       const start = new Date(body.scheduledDate);
 
-      // Continue the package's existing numbering rather than restarting at 1.
+      // Continue the package's existing numbering rather than restarting at 1, skipping rows
+      // that no longer hold a place (moved or cancelled).
       let nextNumber: number | null = body.sessionNumber ?? null;
       if (nextNumber == null && body.packageId) {
-        const numbers = db.visits
-          .filter((v) => v.packageId === body.packageId)
-          .map((v) => v.sessionNumber || 0);
-        nextNumber = (numbers.length ? Math.max(...numbers) : 0) + 1;
+        nextNumber = nextSessionNumber(db.visits.filter((v) => v.packageId === body.packageId));
       }
 
       const created = Array.from({ length: count }).map((_, i) => {
@@ -912,7 +914,6 @@ function handle(method: string, path: string, params: any, body: any): any {
           attendance: 'SCHEDULED',
           carriedForward: false,
           carriedFromId: source.id,
-          remarks: `Carried forward from ${new Date(source.scheduledDate).toDateString()}`,
         };
         db.visits.push(nv);
         return nv;
@@ -930,17 +931,28 @@ function handle(method: string, path: string, params: any, body: any): any {
     }
     if (seg.length === 3 && seg[2] === 'carry-forward' && method === 'post') {
       const source = db.visits.find((x) => x.id === seg[1])!;
+      // The same guards as the API: a session that happened or has already been moved
+      // cannot be moved again.
+      if (!canCarryForward(source)) {
+        throw { status: 409, error: carryForwardBlockedReason(source) };
+      }
+      const target = new Date(body.newDate);
+      if (target.toISOString().slice(0, 10) === source.scheduledDate.slice(0, 10)) {
+        throw {
+          status: 400,
+          error: 'That is the day it is already booked for. Pick a different date to move it to.',
+        };
+      }
       source.attendance = 'CARRIED_FORWARD';
       source.carriedForward = true;
       const nv = {
         ...source,
         id: newId('vis_'),
-        scheduledDate: new Date(body.newDate).toISOString(),
+        scheduledDate: target.toISOString(),
         completedDate: null,
         attendance: 'SCHEDULED',
         carriedForward: false,
         carriedFromId: source.id,
-        remarks: `Carried forward from ${new Date(source.scheduledDate).toDateString()}`,
       };
       db.visits.push(nv);
       persist();

@@ -50,6 +50,15 @@ import {
   planCycles,
   planSummary,
 } from '../../../shared/packages';
+import {
+  attemptOf,
+  canCarryForward,
+  carryForwardBlockedReason,
+  holdsAPlace,
+  movedFrom,
+  movedTo,
+  sessionProgress,
+} from '../../../shared/sessions';
 
 type Tab = 'overview' | 'diagnoses' | 'packages' | 'sessions' | 'payments';
 
@@ -85,8 +94,13 @@ export default function PatientDetail() {
     patient.packages || [],
     payments
   );
-  const sessionsDone = (patient.visits || []).filter((v) => v.attendance === 'PRESENT').length;
-  const sessionsPending = (patient.visits || []).filter((v) => v.attendance === 'SCHEDULED').length;
+  // A session moved to another day is still one session, so it is counted once.
+  const headerProgress = sessionProgress(
+    patient.visits || [],
+    (patient.packages || []).reduce((sum, k) => sum + k.totalSessions, 0)
+  );
+  const sessionsDone = headerProgress.done;
+  const sessionsPending = headerProgress.upcoming + headerProgress.overdue;
 
   return (
     <div>
@@ -1055,12 +1069,9 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
         <div className="space-y-5">
           {patient.packages.map((p) => {
             const paid = sumPayments(p.payments || []);
-            const done = (p.visits || []).filter((v) => v.attendance === 'PRESENT').length;
-            const startOfToday = new Date();
-            startOfToday.setHours(0, 0, 0, 0);
-            const pending = (p.visits || []).filter(
-              (v) => v.attendance === 'SCHEDULED' && new Date(v.scheduledDate) < startOfToday
-            ).length;
+            const progress = sessionProgress(p.visits || [], p.totalSessions);
+            const done = progress.done;
+            const pending = progress.overdue;
             return (
               <Card key={p.id} className="p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1126,7 +1137,15 @@ function Packages({ patient, reload }: { patient: Patient; reload: () => void })
                   <StatCard
                     label="Progress"
                     value={`${done}/${p.totalSessions}`}
-                    hint={`${pending} overdue pending`}
+                    hint={
+                      [
+                        progress.overdue > 0 ? `${progress.overdue} overdue` : '',
+                        progress.unbooked > 0 ? `${progress.unbooked} to book` : '',
+                        progress.carriedForward > 0 ? `${progress.carriedForward} moved` : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ') || 'on track'
+                    }
                   />
                 </div>
 
@@ -1925,8 +1944,11 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
   const [carryVisit, setCarryVisit] = useState<Visit | null>(null);
 
   const selectedPackage = patient.packages?.find((p) => p.id === form.packageId);
+  // Only sessions that still hold a place count towards the package; a moved one is the
+  // same session on another day, not an extra.
   const alreadyScheduled = selectedPackage
-    ? (patient.visits || []).filter((v) => v.packageId === selectedPackage.id).length
+    ? (patient.visits || []).filter((v) => v.packageId === selectedPackage.id && holdsAPlace(v))
+        .length
     : 0;
   const overBy = selectedPackage
     ? alreadyScheduled + form.count - selectedPackage.totalSessions
@@ -2028,9 +2050,35 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
     reload();
   }
 
+  // Counted across every package this patient has, which is what the list below shows.
+  const packagedSessions = (patient.packages || []).reduce((sum, k) => sum + k.totalSessions, 0);
+  const progress = sessionProgress(patient.visits || [], packagedSessions);
+
   return (
     <div>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        {/* The count, stated. Working it out by eye from a table of twenty rows — half of
+            them moved — is what made this page confusing. */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <span className="font-semibold text-ink-900">
+            {progress.done} of {progress.total || progress.booked} done
+          </span>
+          {progress.upcoming > 0 && (
+            <span className="text-ink-500">{progress.upcoming} upcoming</span>
+          )}
+          {progress.overdue > 0 && (
+            <span className="font-medium text-amber-700">{progress.overdue} overdue</span>
+          )}
+          {progress.missed > 0 && (
+            <span className="font-medium text-red-600">{progress.missed} missed</span>
+          )}
+          {progress.unbooked > 0 && (
+            <span className="text-ink-500">{progress.unbooked} still to book</span>
+          )}
+          {progress.carriedForward > 0 && (
+            <span className="text-ink-400">{progress.carriedForward} moved to another day</span>
+          )}
+        </div>
         <button className="btn-primary" onClick={openNew}>
           + Add Session / Visit
         </button>
@@ -2048,22 +2096,59 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
                   <th className="th">Session</th>
                   <th className="th">Doctor</th>
                   <th className="th">Fee</th>
-                  <th className="th">Attendance</th>
                   <th className="th">Treatment notes</th>
-                  <th className="th text-right">Mark</th>
+                  <th className="th text-right">Attendance</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
-                {patient.visits.map((v) => (
-                  <tr key={v.id} className="hover:bg-brand-50/40">
-                    <td className="px-5 py-3 text-ink-700">{formatDate(v.scheduledDate)}</td>
-                    <td className="px-5 py-3 text-ink-700">
-                      {v.sessionNumber ? `#${v.sessionNumber}` : v.type.replace(/_/g, ' ')}
+                {patient.visits.map((v) => {
+                  const all = patient.visits || [];
+                  const { attempt, attempts } = attemptOf(v, all);
+                  const from = movedFrom(v, all);
+                  const to = movedTo(v, all);
+                  const superseded = v.attendance === 'CARRIED_FORWARD';
+                  const pkgTitle = patient.packages?.find((k) => k.id === v.packageId)?.title;
+
+                  return (
+                  <tr
+                    key={v.id}
+                    className={superseded ? 'bg-ink-50/40 text-ink-400' : 'hover:bg-brand-50/40'}
+                  >
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-700">
+                      <span className={superseded ? 'text-ink-400 line-through' : ''}>
+                        {formatDate(v.scheduledDate)}
+                      </span>
                     </td>
-                    <td className="px-5 py-3">
+                    <td className="px-4 py-3 text-ink-700">
+                      <div className="font-medium">
+                        {v.sessionNumber ? `#${v.sessionNumber}` : v.type.replace(/_/g, ' ')}
+                        {attempts > 1 && (
+                          <span className="ml-1.5 text-[11px] font-normal text-ink-400">
+                            attempt {attempt} of {attempts}
+                          </span>
+                        )}
+                      </div>
+                      {/* Both halves of a move say where the other one is, so two rows with the
+                          same number can never look like two different sessions. */}
+                      {to && (
+                        <div className="text-[11px] text-amber-700">
+                          → moved to {formatDate(to.scheduledDate)}
+                        </div>
+                      )}
+                      {from && (
+                        <div className="text-[11px] text-ink-400">
+                          moved from {formatDate(from.scheduledDate)}
+                        </div>
+                      )}
+                      {pkgTitle && (
+                        <div className="truncate text-[11px] text-ink-400">{pkgTitle}</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <select
-                        className="input !w-auto !min-w-[9rem] !py-1 !text-xs"
+                        className="input !w-auto !min-w-[7.5rem] !py-1 !text-xs"
                         value={v.doctorId || ''}
+                        disabled={superseded}
                         onChange={(e) => assignDoctor(v, e.target.value)}
                       >
                         <option value="">Unassigned</option>
@@ -2074,52 +2159,69 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
                         ))}
                       </select>
                     </td>
-                    <td className="px-5 py-3 text-ink-700">
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-700">
                       {currency(v.fee)}
                       {v.feeCollected && (
-                        <span className="ml-2 text-xs text-emerald-600">paid</span>
+                        <span className="ml-1.5 text-xs text-emerald-600">paid</span>
                       )}
                     </td>
-                    <td className="px-5 py-3">
-                      <Badge value={v.attendance} />
-                    </td>
-                    <td className="px-5 py-3">
+                    <td className="px-4 py-3">
                       <input
-                        className="input !py-1 !text-xs"
+                        className="input !min-w-[8rem] !py-1 !text-xs"
                         defaultValue={v.treatmentNotes || ''}
                         placeholder="Add notes…"
+                        disabled={superseded}
                         onBlur={(e) => {
                           if (e.target.value !== (v.treatmentNotes || ''))
                             saveNotes(v, e.target.value);
                         }}
                       />
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-right">
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      {/* A row that was moved or called off is history: it shows its state and
+                          nothing to act on, because the live session is elsewhere. */}
+                      {(superseded || v.attendance === 'CANCELLED') && (
+                        <Badge value={v.attendance} />
+                      )}
+                      {!superseded && v.attendance !== 'CANCELLED' && (
+                        <>
                       <button
-                        className="btn-ghost !py-1 text-emerald-600 hover:bg-emerald-50"
+                        className={`btn-ghost !px-2.5 !py-1 !text-xs ${
+                          v.attendance === 'PRESENT'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'text-emerald-600 hover:bg-emerald-50'
+                        }`}
+                        title="The patient came"
                         onClick={() => mark(v, 'PRESENT')}
                       >
                         Present
                       </button>
                       <button
-                        className="btn-ghost !py-1 text-red-600 hover:bg-red-50"
+                        className={`btn-ghost !px-2.5 !py-1 !text-xs ${
+                          v.attendance === 'ABSENT'
+                            ? 'bg-red-100 text-red-700'
+                            : 'text-red-600 hover:bg-red-50'
+                        }`}
+                        title="The patient did not come"
                         onClick={() => mark(v, 'ABSENT')}
                       >
                         Absent
                       </button>
                       <button
-                        className="btn-ghost !px-2 !py-1 text-ink-400"
-                        title="Cancel this session (keeps the record)"
+                        className="btn-ghost !px-2 !py-1 !text-xs text-ink-400"
+                        title="Call this session off (keeps the record)"
                         onClick={() => mark(v, 'CANCELLED')}
                       >
                         Cancel
                       </button>
-                      {v.attendance !== 'CARRIED_FORWARD' && (
+                      {canCarryForward(v) && (
                         <IconButton
                           icon="forward"
-                          label="Carry this session forward to a new date"
+                          label="Move this session to another date"
                           onClick={() => setCarryVisit(v)}
                         />
+                      )}
+                        </>
                       )}
                       <IconButton
                         icon="trash"
@@ -2129,7 +2231,8 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
                       />
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
