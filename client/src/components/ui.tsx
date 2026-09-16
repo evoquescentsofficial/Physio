@@ -170,18 +170,34 @@ export function ConfirmDialog({
   );
 }
 
+const MODAL_SIZES: Record<string, string> = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-3xl',
+  xl: 'max-w-5xl',
+};
+
 export function Modal({
   open,
   onClose,
   title,
   children,
   wide,
+  size,
+  icon,
+  description,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  /** Legacy: true is equivalent to size="lg". Kept so existing call sites are untouched. */
   wide?: boolean;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** A small tinted icon chip beside the title, for a dialog that deserves more presence. */
+  icon?: React.ReactNode;
+  /** A line under the title explaining what this dialog is for. */
+  description?: React.ReactNode;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -193,25 +209,133 @@ export function Modal({
   }, [open, onClose]);
 
   if (!open) return null;
+  const widthClass = MODAL_SIZES[size || (wide ? 'lg' : 'md')];
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/50 p-4 backdrop-blur-sm"
+      className="animate-backdrop-in fixed inset-0 z-50 flex items-center justify-center bg-ink-950/60 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className={`card my-8 w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} animate-in`}
+        className={`animate-modal-in flex max-h-[88vh] w-full ${widthClass} flex-col overflow-hidden rounded-3xl bg-white shadow-2xl`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-ink-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-ink-900">{title}</h2>
-          <button onClick={onClose} className="btn-ghost !px-2 !py-1 text-xl leading-none">
-            &times;
+        <div className="flex shrink-0 items-start gap-3.5 border-b border-ink-100 px-6 py-5">
+          {icon && (
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              {icon}
+            </div>
+          )}
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h2 className="text-[17px] font-bold leading-tight text-ink-900">{title}</h2>
+            {description && (
+              <p className="mt-1 text-[13px] leading-snug text-ink-500">{description}</p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="-mr-1 -mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"
+          >
+            <Icon name="x" className="h-4 w-4" />
           </button>
         </div>
-        <div className="px-6 py-5">{children}</div>
+        <div className="modal-scroll overflow-y-auto px-6 py-5">{children}</div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A tinted panel wrapper for grouping related fields under an icon and a heading, so a long
+ * form reads as a sequence of clear steps rather than one undifferentiated column of inputs.
+ */
+export function FormSection({
+  icon,
+  title,
+  description,
+  children,
+  tone = 'default',
+  className = '',
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  tone?: 'default' | 'brand';
+  className?: string;
+}) {
+  const tones = {
+    default: 'border-ink-100 bg-ink-50/50',
+    brand: 'border-brand-100 bg-brand-50/50',
+  };
+  const iconTones = {
+    default: 'bg-white text-ink-600 shadow-soft',
+    brand: 'bg-white text-brand-600 shadow-soft',
+  };
+  return (
+    <div className={`rounded-2xl border p-5 ${tones[tone]} ${className}`}>
+      <div className="mb-4 flex items-center gap-2.5">
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconTones[tone]}`}>
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-[13.5px] font-bold leading-tight text-ink-900">{title}</h3>
+          {description && <p className="text-[12px] leading-snug text-ink-500">{description}</p>}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** A row of pill buttons standing in for a native select when the choices are few and short. */
+export function SegmentedControl({
+  options,
+  value,
+  onChange,
+  className = '',
+}: {
+  options: { label: string; value: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-wrap gap-1.5 ${className}`}>
+      {options.map((o) => {
+        const selected = value === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onChange(o.value)}
+            aria-pressed={selected}
+            className={`rounded-lg px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
+              selected
+                ? 'bg-brand-600 text-white shadow-soft'
+                : 'bg-white text-ink-600 border border-ink-200 hover:bg-ink-50'
+            }`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The sticky action row at the bottom of a modal's scroll area. Since the scroll container is
+ * the modal body rather than the page, `sticky` here pins the buttons to the bottom of the
+ * dialog without any coordination with `Modal` itself.
+ */
+export function ModalActions({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="sticky bottom-0 -mx-6 -mb-5 mt-6 flex justify-end gap-2 border-t border-ink-100 bg-white/95 px-6 py-4 backdrop-blur">
+      {children}
     </div>
   );
 }

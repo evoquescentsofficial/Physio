@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import { Field, Modal } from './ui';
+import { Field, FormSection, Modal, ModalActions, SegmentedControl } from './ui';
+import FormIcon from './FormIcon';
 import { Attachment, Diagnosis, Doctor } from '../types';
 import {
   BODY_REGIONS,
@@ -74,44 +75,49 @@ function ConditionPicker({
 
   return (
     <div className="relative" ref={boxRef}>
-      <input
-        className="input"
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setOpen(true);
-          setHighlight(0);
-        }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={(e) => {
-          if (!open || matches.length === 0) return;
-          if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setHighlight((h) => (h + 1) % matches.length);
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setHighlight((h) => (h - 1 + matches.length) % matches.length);
-          } else if (e.key === 'Enter') {
-            e.preventDefault();
-            choose(matches[highlight]);
-          } else if (e.key === 'Escape') {
-            setOpen(false);
-          }
-        }}
-        placeholder="Start typing — e.g. back pain, frozen shoulder, sciatica"
-        autoComplete="off"
-        required
-      />
+      <div className="relative">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400">
+          <FormIcon name="search" className="h-[15px] w-[15px]" />
+        </span>
+        <input
+          className="input pl-9"
+          value={value}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setOpen(true);
+            setHighlight(0);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (!open || matches.length === 0) return;
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setHighlight((h) => (h + 1) % matches.length);
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setHighlight((h) => (h - 1 + matches.length) % matches.length);
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              choose(matches[highlight]);
+            } else if (e.key === 'Escape') {
+              setOpen(false);
+            }
+          }}
+          placeholder="Start typing — e.g. back pain, frozen shoulder, sciatica"
+          autoComplete="off"
+          required
+        />
+      </div>
 
       {open && matches.length > 0 && (
-        <ul className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-ink-200 bg-white py-1 shadow-card">
+        <ul className="absolute z-10 mt-1.5 max-h-72 w-full overflow-y-auto rounded-2xl border border-ink-100 bg-white py-1.5 shadow-2xl">
           {matches.map((c, i) => (
             <li key={c.name}>
               <button
                 type="button"
                 onMouseEnter={() => setHighlight(i)}
                 onClick={() => choose(c)}
-                className={`flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors ${
+                className={`mx-1.5 flex w-[calc(100%-0.75rem)] items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
                   i === highlight ? 'bg-brand-50' : 'hover:bg-ink-50'
                 }`}
               >
@@ -154,7 +160,7 @@ function PainScale({ value, onChange }: { value: number | ''; onChange: (v: numb
 
   return (
     <div>
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-1.5">
         {Array.from({ length: 11 }).map((_, n) => {
           const selected = value === n;
           const tone = n <= 3 ? 'bg-emerald-500' : n <= 6 ? 'bg-amber-500' : 'bg-red-500';
@@ -164,8 +170,10 @@ function PainScale({ value, onChange }: { value: number | ''; onChange: (v: numb
               type="button"
               onClick={() => onChange(selected ? '' : n)}
               aria-label={`Pain ${n} out of 10`}
-              className={`h-9 w-9 rounded-lg text-sm font-semibold transition-colors ${
-                selected ? `${tone} text-white` : 'bg-ink-100 text-ink-500 hover:bg-ink-200'
+              className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-all ${
+                selected
+                  ? `${tone} text-white shadow-soft scale-105`
+                  : 'bg-white text-ink-500 border border-ink-200 hover:border-ink-300 hover:bg-ink-50'
               }`}
             >
               {n}
@@ -173,9 +181,9 @@ function PainScale({ value, onChange }: { value: number | ''; onChange: (v: numb
           );
         })}
       </div>
-      <div className="mt-1.5 text-xs text-ink-400">
-        {label}
-        {value !== '' && ' — click again to clear'}
+      <div className="mt-2 text-xs text-ink-500">
+        <span className="font-medium text-ink-700">{label}</span>
+        {value !== '' && <span className="text-ink-400"> — click again to clear</span>}
       </div>
     </div>
   );
@@ -207,28 +215,38 @@ function TickColumn({
   }
 
   return (
-    <div className="rounded-xl border border-ink-200 bg-white">
-      <div className="rounded-t-xl bg-ink-900 px-4 py-2 text-sm font-semibold text-white">
-        {title}
+    <div className="overflow-hidden rounded-xl border border-ink-200 bg-white">
+      <div className="flex items-center gap-2 border-b border-ink-100 bg-ink-50/70 px-3.5 py-2.5">
+        <span className="text-[13px] font-bold text-ink-800">{title}</span>
+        {selected.length > 0 && (
+          <span className="ml-auto rounded-full bg-brand-100 px-2 py-0.5 text-[10.5px] font-semibold text-brand-700">
+            {selected.length}
+          </span>
+        )}
       </div>
-      <div className="space-y-1.5 p-3">
-        {shown.map((item) => (
-          <label
-            key={item}
-            className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm text-ink-800 hover:bg-brand-50"
-          >
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={selected.includes(item)}
-              onChange={() => onToggle(item)}
-            />
-            {item}
-          </label>
-        ))}
-        <div className="flex gap-1 pt-1">
+      <div className="space-y-0.5 p-2">
+        {shown.map((item) => {
+          const checked = selected.includes(item);
+          return (
+            <label
+              key={item}
+              className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] transition-colors ${
+                checked ? 'bg-brand-50 text-brand-900' : 'text-ink-700 hover:bg-ink-50'
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded"
+                checked={checked}
+                onChange={() => onToggle(item)}
+              />
+              {item}
+            </label>
+          );
+        })}
+        <div className="flex gap-1.5 pt-1.5">
           <input
-            className="input !py-1 !text-xs"
+            className="input !py-1.5 !text-xs"
             value={extra}
             onChange={(e) => setExtra(e.target.value)}
             onKeyDown={(e) => {
@@ -239,7 +257,7 @@ function TickColumn({
             }}
             placeholder="Add another…"
           />
-          <button type="button" className="btn-secondary !px-2 !py-1 !text-xs" onClick={add}>
+          <button type="button" className="btn-secondary !px-2.5 !py-1.5 !text-xs" onClick={add}>
             Add
           </button>
         </div>
@@ -417,127 +435,135 @@ export default function PrescriptionForm({
       open={open}
       onClose={onClose}
       title={editing ? 'Edit assessment & prescription' : 'New assessment & prescription'}
-      wide
+      description={
+        editing
+          ? 'Update the diagnosis, treatment plan and instructions for this record.'
+          : 'History, examination, diagnosis and treatment plan — just like the paper pad.'
+      }
+      icon={<FormIcon name="stethoscope" />}
+      size="xl"
     >
-      <form onSubmit={save} className="space-y-6">
-        {/* Who and when — the top line of the paper form. */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Date">
-            <input
-              className="input"
-              type="date"
-              value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
-            />
-          </Field>
-          <Field label="Attending doctor">
-            <select
-              className="input"
-              value={form.doctorId}
-              onChange={(e) => setForm({ ...form, doctorId: e.target.value })}
-            >
-              <option value="">Not assigned</option>
-              {doctors.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                  {d.specialization ? ` — ${d.specialization}` : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
+      <form onSubmit={save} className="space-y-5">
+        <FormSection icon={<FormIcon name="calendar" />} title="Visit info">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Date">
+              <input
+                className="input"
+                type="date"
+                value={form.date}
+                onChange={(e) => setForm({ ...form, date: e.target.value })}
+              />
+            </Field>
+            <Field label="Attending doctor">
+              <select
+                className="input"
+                value={form.doctorId}
+                onChange={(e) => setForm({ ...form, doctorId: e.target.value })}
+              >
+                <option value="">Not assigned</option>
+                {doctors.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                    {d.specialization ? ` — ${d.specialization}` : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        </FormSection>
 
-        <Field label="History">
-          <textarea
-            className="input"
-            rows={2}
-            value={form.history}
-            onChange={(e) => setForm({ ...form, history: e.target.value })}
-            placeholder="How it started, how long ago, what makes it worse or better, past episodes"
-          />
-        </Field>
+        <FormSection icon={<FormIcon name="stethoscope" />} title="History & examination">
+          <div className="space-y-4">
+            <Field label="History">
+              <textarea
+                className="input"
+                rows={2}
+                value={form.history}
+                onChange={(e) => setForm({ ...form, history: e.target.value })}
+                placeholder="How it started, how long ago, what makes it worse or better, past episodes"
+              />
+            </Field>
+            <Field label="Initial evaluation & examination">
+              <textarea
+                className="input"
+                rows={3}
+                value={form.evaluation}
+                onChange={(e) => setForm({ ...form, evaluation: e.target.value })}
+                placeholder="Range of motion, strength, special tests, posture, gait"
+              />
+            </Field>
+          </div>
+        </FormSection>
 
-        <Field label="Initial evaluation & examination">
-          <textarea
-            className="input"
-            rows={3}
-            value={form.evaluation}
-            onChange={(e) => setForm({ ...form, evaluation: e.target.value })}
-            placeholder="Range of motion, strength, special tests, posture, gait"
-          />
-        </Field>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Diagnosis" className="sm:col-span-2">
-            <ConditionPicker
-              value={form.title}
-              onChange={(title) => setForm({ ...form, title })}
-              onPick={applyTemplate}
-            />
-          </Field>
-          <Field label="Body region">
-            <select
-              className="input"
-              value={form.bodyRegion}
-              onChange={(e) => setForm({ ...form, bodyRegion: e.target.value })}
-            >
-              <option value="">Not recorded</option>
-              {BODY_REGIONS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Side">
-            <select
-              className="input"
-              value={form.side}
-              onChange={(e) => setForm({ ...form, side: e.target.value })}
-            >
-              {SIDES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Pain today (0–10)" className="sm:col-span-2">
-            <PainScale
-              value={form.painScore}
-              onChange={(painScore) => setForm({ ...form, painScore })}
-            />
-          </Field>
-        </div>
+        <FormSection icon={<FormIcon name="target" />} title="Diagnosis">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Diagnosis" className="sm:col-span-2">
+              <ConditionPicker
+                value={form.title}
+                onChange={(title) => setForm({ ...form, title })}
+                onPick={applyTemplate}
+              />
+            </Field>
+            <Field label="Body region">
+              <select
+                className="input"
+                value={form.bodyRegion}
+                onChange={(e) => setForm({ ...form, bodyRegion: e.target.value })}
+              >
+                <option value="">Not recorded</option>
+                {BODY_REGIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Side">
+              <SegmentedControl
+                value={form.side}
+                onChange={(side) => setForm({ ...form, side })}
+                options={SIDES.map((s) => ({ label: s, value: s }))}
+              />
+            </Field>
+            <Field label="Pain today (0–10)" className="sm:col-span-2">
+              <PainScale
+                value={form.painScore}
+                onChange={(painScore) => setForm({ ...form, painScore })}
+              />
+            </Field>
+          </div>
+        </FormSection>
 
         {/* The three tick-box columns, exactly as they run across the paper. */}
-        <div className="grid gap-4 sm:grid-cols-3">
-          <TickColumn
-            title="Diagnosis"
-            options={diagnosisOptions}
-            selected={form.checkedDiagnoses}
-            onToggle={(i) => toggle('checkedDiagnoses', i)}
-            onAdd={(i) => add('checkedDiagnoses', i)}
-          />
-          <TickColumn
-            title="Therapeutic exercises"
-            options={exerciseOptions}
-            selected={form.exercises}
-            onToggle={(i) => toggle('exercises', i)}
-            onAdd={(i) => add('exercises', i)}
-          />
-          <TickColumn
-            title="Modalities"
-            options={modalityOptions}
-            selected={form.modalities}
-            onToggle={(i) => toggle('modalities', i)}
-            onAdd={(i) => add('modalities', i)}
-          />
-        </div>
+        <FormSection icon={<FormIcon name="activity" />} title="Treatment protocol">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <TickColumn
+              title="Diagnosis"
+              options={diagnosisOptions}
+              selected={form.checkedDiagnoses}
+              onToggle={(i) => toggle('checkedDiagnoses', i)}
+              onAdd={(i) => add('checkedDiagnoses', i)}
+            />
+            <TickColumn
+              title="Therapeutic exercises"
+              options={exerciseOptions}
+              selected={form.exercises}
+              onToggle={(i) => toggle('exercises', i)}
+              onAdd={(i) => add('exercises', i)}
+            />
+            <TickColumn
+              title="Modalities"
+              options={modalityOptions}
+              selected={form.modalities}
+              onToggle={(i) => toggle('modalities', i)}
+              onAdd={(i) => add('modalities', i)}
+            />
+          </div>
+        </FormSection>
 
-        <div>
+        <FormSection icon={<FormIcon name="clipboard" />} title="Treatment plan" tone="brand">
           <div className="mb-1 flex items-center justify-between">
-            <label className="label !mb-0">Treatment plan</label>
+            <span className="text-xs text-ink-500">What the course of treatment will involve</span>
             {template && (
               <button
                 type="button"
@@ -562,61 +588,62 @@ export default function PrescriptionForm({
             placeholder="Pick a condition above to fill this in, or write your own"
           />
           {template && !planTouched && (
-            <p className="mt-1 text-xs text-emerald-700">
+            <p className="mt-1.5 text-xs text-emerald-700">
               Filled from the standard plan for {template.name.toLowerCase()} — edit it as needed.
             </p>
           )}
-        </div>
+        </FormSection>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Instructions" className="sm:col-span-2">
-            <textarea
-              className="input"
-              rows={2}
-              value={form.instructions}
-              onChange={(e) => setForm({ ...form, instructions: e.target.value })}
-              placeholder="What the patient should do at home: rest, posture, ice, exercises, precautions"
-            />
-          </Field>
-          <Field label="Referred to">
-            <input
-              className="input"
-              value={form.referredTo}
-              onChange={(e) => setForm({ ...form, referredTo: e.target.value })}
-              placeholder="Orthopaedic surgeon, neurologist, imaging centre…"
-            />
-          </Field>
-          <Field label="Medications">
-            <input
-              className="input"
-              value={form.medications}
-              onChange={(e) => setForm({ ...form, medications: e.target.value })}
-              placeholder="Prescribed or already being taken"
-            />
-          </Field>
-          <Field label="Lab investigations / radiological findings" className="sm:col-span-2">
-            <textarea
-              className="input"
-              rows={2}
-              value={form.labFindings}
-              onChange={(e) => setForm({ ...form, labFindings: e.target.value })}
-              placeholder="X-ray, MRI, blood work — what was asked for and what it showed"
-            />
-          </Field>
-          <Field label="Remarks" className="sm:col-span-2">
-            <textarea
-              className="input"
-              rows={2}
-              value={form.remarks}
-              onChange={(e) => setForm({ ...form, remarks: e.target.value })}
-              placeholder="Anything to tell the treating therapist"
-            />
-          </Field>
-        </div>
+        <FormSection icon={<FormIcon name="message" />} title="Instructions & referrals">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Instructions" className="sm:col-span-2">
+              <textarea
+                className="input"
+                rows={2}
+                value={form.instructions}
+                onChange={(e) => setForm({ ...form, instructions: e.target.value })}
+                placeholder="What the patient should do at home: rest, posture, ice, exercises, precautions"
+              />
+            </Field>
+            <Field label="Referred to">
+              <input
+                className="input"
+                value={form.referredTo}
+                onChange={(e) => setForm({ ...form, referredTo: e.target.value })}
+                placeholder="Orthopaedic surgeon, neurologist, imaging centre…"
+              />
+            </Field>
+            <Field label="Medications">
+              <input
+                className="input"
+                value={form.medications}
+                onChange={(e) => setForm({ ...form, medications: e.target.value })}
+                placeholder="Prescribed or already being taken"
+              />
+            </Field>
+            <Field label="Lab investigations / radiological findings" className="sm:col-span-2">
+              <textarea
+                className="input"
+                rows={2}
+                value={form.labFindings}
+                onChange={(e) => setForm({ ...form, labFindings: e.target.value })}
+                placeholder="X-ray, MRI, blood work — what was asked for and what it showed"
+              />
+            </Field>
+            <Field label="Remarks" className="sm:col-span-2">
+              <textarea
+                className="input"
+                rows={2}
+                value={form.remarks}
+                onChange={(e) => setForm({ ...form, remarks: e.target.value })}
+                placeholder="Anything to tell the treating therapist"
+              />
+            </Field>
+          </div>
+        </FormSection>
 
         {/* Reports can only be attached to a record that exists, so this appears when editing. */}
-        <div>
-          <label className="label">Reports &amp; scans</label>
+        <FormSection icon={<FormIcon name="paperclip" />} title="Reports & scans">
           {editing ? (
             <AttachmentList
               patientId={patientId}
@@ -625,18 +652,23 @@ export default function PrescriptionForm({
               onChange={setAttachments}
             />
           ) : (
-            <p className="rounded-lg bg-ink-50 px-4 py-3 text-sm text-ink-500">
+            <p className="rounded-lg bg-white px-4 py-3 text-sm text-ink-500">
               Save this assessment first, then reopen it to attach X-rays, MRI reports or lab PDFs.
             </p>
           )}
-        </div>
+        </FormSection>
 
         {template && !editing && (
-          <div className="rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-ink-700">
-            A course for this condition usually runs{' '}
-            <span className="font-semibold text-ink-900">{template.sessions} sessions</span>, one
-            every {template.frequencyDays} day{template.frequencyDays === 1 ? '' : 's'}. You can set
-            the package up straight after saving.
+          <div className="flex items-start gap-3 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3.5 text-sm text-ink-700">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-brand-600 shadow-soft">
+              <FormIcon name="calendar" className="h-4 w-4" />
+            </span>
+            <span>
+              A course for this condition usually runs{' '}
+              <span className="font-semibold text-ink-900">{template.sessions} sessions</span>, one
+              every {template.frequencyDays} day{template.frequencyDays === 1 ? '' : 's'}. You can
+              set the package up straight after saving.
+            </span>
           </div>
         )}
 
@@ -644,14 +676,14 @@ export default function PrescriptionForm({
           <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
 
-        <div className="flex justify-end gap-2">
+        <ModalActions>
           <button type="button" className="btn-secondary" onClick={onClose}>
             Cancel
           </button>
           <button type="submit" className="btn-primary" disabled={busy}>
             {busy ? 'Saving…' : editing ? 'Update assessment' : 'Save assessment'}
           </button>
-        </div>
+        </ModalActions>
       </form>
     </Modal>
   );

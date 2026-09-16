@@ -6,13 +6,24 @@ import {
   ConfirmDialog,
   EmptyState,
   Field,
+  FormSection,
   IconButton,
   Modal,
+  ModalActions,
   PageHeader,
+  SegmentedControl,
   formatDate,
   toInputDate,
 } from '../components/ui';
+import FormIcon from '../components/FormIcon';
 import { Patient } from '../types';
+
+/** First letters of up to two words, for the avatar shown while adding or editing a patient. */
+function initialsOf(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
+}
 
 const empty = {
   name: '',
@@ -198,114 +209,157 @@ export default function Patients() {
         onConfirm={() => remove(confirming!)}
       />
 
-      <Modal open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Patient' : 'Add Patient'} wide>
-        <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
-          <Field label="Full name">
-            <input
-              className="input"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-            />
-          </Field>
-          <Field
-            label="Attendant name (optional)"
-            hint="Whoever brings the patient in — a family member, a carer, a driver. Searching finds the patient by this name too."
-          >
-            <input
-              className="input"
-              value={form.attendantName}
-              onChange={(e) => setForm({ ...form, attendantName: e.target.value })}
-              placeholder="Leave blank if they come alone"
-            />
-          </Field>
-          <Field label="Phone">
-            <input
-              className="input"
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              required
-            />
-          </Field>
-          <Field label="Email">
-            <input
-              className="input"
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-            />
-          </Field>
-          <Field label="Date of birth">
-            <input
-              className="input"
-              type="date"
-              value={form.dob}
-              onChange={(e) => setForm({ ...form, dob: e.target.value })}
-            />
-          </Field>
-          <Field label="Gender">
-            <select
-              className="input"
-              value={form.gender}
-              onChange={(e) => setForm({ ...form, gender: e.target.value })}
-            >
-              <option value="">Select…</option>
-              <option>Male</option>
-              <option>Female</option>
-              <option>Other</option>
-            </select>
-          </Field>
-          <Field label="Blood group">
-            <input
-              className="input"
-              value={form.bloodGroup}
-              onChange={(e) => setForm({ ...form, bloodGroup: e.target.value })}
-            />
-          </Field>
-          <Field label="Occupation">
-            <input
-              className="input"
-              value={form.occupation}
-              onChange={(e) => setForm({ ...form, occupation: e.target.value })}
-            />
-          </Field>
-          <Field label="Referred by">
-            <input
-              className="input"
-              value={form.referredBy}
-              onChange={(e) => setForm({ ...form, referredBy: e.target.value })}
-            />
-          </Field>
-          <Field label="Emergency contact">
-            <input
-              className="input"
-              value={form.emergencyContact}
-              onChange={(e) => setForm({ ...form, emergencyContact: e.target.value })}
-            />
-          </Field>
-          <Field label="Address" className="sm:col-span-2">
-            <input
-              className="input"
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-            />
-          </Field>
-          <Field label="Notes" className="sm:col-span-2">
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={editing ? 'Edit patient' : 'Add patient'}
+        description={
+          editing
+            ? `Updating ${editing.name}'s record`
+            : 'Just a name and phone number to start — everything else can be filled in later.'
+        }
+        icon={<FormIcon name="person" />}
+        size="lg"
+      >
+        <form onSubmit={save} className="space-y-5">
+          <FormSection icon={<FormIcon name="person" />} title="Identity" tone="brand">
+            <div className="flex gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 text-lg font-bold text-white shadow-soft">
+                {initialsOf(form.name)}
+              </div>
+              <div className="grid flex-1 gap-4 sm:grid-cols-2">
+                <Field label="Full name">
+                  <input
+                    className="input"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="e.g. Ahmed Raza"
+                    required
+                    autoFocus
+                  />
+                </Field>
+                <Field label="Phone">
+                  <input
+                    className="input"
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    placeholder="03XX-XXXXXXX"
+                    required
+                  />
+                </Field>
+              </div>
+            </div>
+            <div className="mt-4">
+              <Field
+                label="Attendant name (optional)"
+                hint="Whoever brings the patient in — a family member, a carer, a driver. Searching finds the patient by this name too."
+              >
+                <input
+                  className="input"
+                  value={form.attendantName}
+                  onChange={(e) => setForm({ ...form, attendantName: e.target.value })}
+                  placeholder="Leave blank if they come alone"
+                />
+              </Field>
+            </div>
+          </FormSection>
+
+          <FormSection icon={<FormIcon name="phone" />} title="Contact">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Email">
+                <input
+                  className="input"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                />
+              </Field>
+              <Field label="Address">
+                <input
+                  className="input"
+                  value={form.address}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
+                />
+              </Field>
+            </div>
+          </FormSection>
+
+          <FormSection icon={<FormIcon name="calendar" />} title="Personal details">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Date of birth">
+                <input
+                  className="input"
+                  type="date"
+                  value={form.dob}
+                  onChange={(e) => setForm({ ...form, dob: e.target.value })}
+                />
+              </Field>
+              <Field label="Blood group">
+                <input
+                  className="input"
+                  value={form.bloodGroup}
+                  onChange={(e) => setForm({ ...form, bloodGroup: e.target.value })}
+                  placeholder="e.g. O+"
+                />
+              </Field>
+              <Field label="Gender">
+                <SegmentedControl
+                  value={form.gender}
+                  onChange={(gender) => setForm({ ...form, gender })}
+                  options={[
+                    { label: 'Male', value: 'Male' },
+                    { label: 'Female', value: 'Female' },
+                    { label: 'Other', value: 'Other' },
+                  ]}
+                />
+              </Field>
+              <Field label="Occupation">
+                <input
+                  className="input"
+                  value={form.occupation}
+                  onChange={(e) => setForm({ ...form, occupation: e.target.value })}
+                />
+              </Field>
+            </div>
+          </FormSection>
+
+          <FormSection icon={<FormIcon name="heart" />} title="Care & referral">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Emergency contact">
+                <input
+                  className="input"
+                  value={form.emergencyContact}
+                  onChange={(e) => setForm({ ...form, emergencyContact: e.target.value })}
+                />
+              </Field>
+              <Field label="Referred by">
+                <input
+                  className="input"
+                  value={form.referredBy}
+                  onChange={(e) => setForm({ ...form, referredBy: e.target.value })}
+                />
+              </Field>
+            </div>
+          </FormSection>
+
+          <FormSection icon={<FormIcon name="note" />} title="Notes">
             <textarea
               className="input"
               rows={3}
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="Anything else worth knowing about this patient"
             />
-          </Field>
-          <div className="flex justify-end gap-2 sm:col-span-2">
+          </FormSection>
+
+          <ModalActions>
             <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>
               Cancel
             </button>
             <button type="submit" className="btn-primary" disabled={busy}>
-              {busy ? 'Saving…' : editing ? 'Update Patient' : 'Add Patient'}
+              {busy ? 'Saving…' : editing ? 'Update patient' : 'Add patient'}
             </button>
-          </div>
+          </ModalActions>
         </form>
       </Modal>
     </div>
