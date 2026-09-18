@@ -10,9 +10,11 @@ import CalendarPage from './pages/Calendar';
 import Payments from './pages/Payments';
 import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
+import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Doctors from './pages/Doctors';
 import Prescription from './pages/Prescription';
+import HepHandout from './pages/HepHandout';
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -41,12 +43,14 @@ export default function App() {
         <Route path="patients" element={<Patients />} />
         <Route path="patients/:id" element={<PatientDetail />} />
         <Route path="patients/:id/prescription/:diagnosisId" element={<Prescription />} />
+        <Route path="patients/:id/hep/:diagnosisId" element={<HepHandout />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="sessions" element={<Sessions />} />
         <Route path="doctors" element={<Doctors />} />
         <Route path="payments" element={<Payments />} />
         <Route path="expenses" element={<Expenses />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="analytics" element={<Analytics />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

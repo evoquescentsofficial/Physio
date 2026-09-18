@@ -369,4 +369,144 @@ router.get(
   })
 );
 
+/**
+ * The operational side of the clinic rather than the money side: what the caseload is made
+ * of, how each doctor's diary filled up, and whether new patients are coming in — the three
+ * questions "how's the clinic doing" actually means once the P&L is already answered.
+ */
+router.get(
+  '/analytics',
+  FINANCE,
+  asyncHandler(async (req, res) => {
+    const { from, to } = resolveRange(req.query);
+    const bucket = bucketFor(from, to);
+    const keys = bucketKeys(from, to, bucket);
+
+    const [diagnoses, visits, newPatients, doctors] = await Promise.all([
+      prisma.diagnosis.findMany({
+        where: { date: { gte: from, lte: to } },
+        select: { title: true },
+      }),
+      prisma.visit.findMany({
+        where: {
+          doctorId: { not: null },
+          scheduledDate: { gte: from, lte: to },
+          attendance: { in: ['PRESENT', 'ABSENT'] },
+        },
+        select: { doctorId: true, fee: true, attendance: true },
+      }),
+      prisma.patient.findMany({
+        where: { createdAt: { gte: from, lte: to } },
+        select: { createdAt: true },
+      }),
+      prisma.doctor.findMany({ select: { id: true, name: true } }),
+    ]);
+
+    // What the caseload is made of: the diagnosis titles seen most often in this window.
+    const diagnosisCounts = new Map<string, number>();
+    for (const d of diagnoses) {
+      const title = d.title.trim();
+      if (!title) continue;
+      diagnosisCounts.set(title, (diagnosisCounts.get(title) || 0) + 1);
+    }
+    const topDiagnoses = [...diagnosisCounts.entries()]
+      .map(([title, count]) => ({ title, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+    // Each doctor's diary: how many sessions they actually saw, what those billed, and what
+    // share of what was booked with them actually happened.
+    const byDoctor = new Map<string, { sessions: number; billed: number; absent: number }>();
+    for (const v of visits) {
+      const row = byDoctor.get(v.doctorId!) || { sessions: 0, billed: 0, absent: 0 };
+      if (v.attendance === 'PRESENT') {
+        row.sessions += 1;
+        row.billed += v.fee;
+      } else {
+        row.absent += 1;
+      }
+      byDoctor.set(v.doctorId!, row);
+    }
+    const doctorActivity = doctors
+      .map((d) => {
+        const row = byDoctor.get(d.id) || { sessions: 0, billed: 0, absent: 0 };
+        const booked = row.sessions + row.absent;
+        return {
+          doctorId: d.id,
+          name: d.name,
+          sessions: row.sessions,
+          billed: row.billed,
+          attendanceRate: booked ? Math.round((row.sessions / booked) * 100) : null,
+        };
+      })
+      .filter((d) => d.sessions > 0 || d.billed > 0)
+      .sort((a, b) => b.billed - a.billed);
+
+    // New registrations, bucketed the same way as the money charts so the two line up.
+    const patientsByBucket: Record<string, number> = {};
+    for (const key of keys) patientsByBucket[key] = 0;
+    for (const p of newPatients) {
+      const key = bucketKey(p.createdAt, bucket);
+      if (patientsByBucket[key] !== undefined) patientsByBucket[key] += 1;
+    }
+
+    res.json({
+      topDiagnoses,
+      doctorActivity,
+      newPatients: keys.map((key) => ({
+        month: bucketLabel(key, bucket),
+        count: patientsByBucket[key],
+      })),
+    });
+  })
+);
+
+/**
+ * Patients who used to come and have gone quiet: their last completed session is more than
+ * `days` ago and nothing is booked for them going forward. This is the list the front desk
+ * works from to call people back, not a historical report, so it is not date-ranged.
+ */
+router.get(
+  '/reactivation',
+  asyncHandler(async (req, res) => {
+    const days = Math.max(1, Math.min(365, Number(req.query.days) || 45));
+    const now = new Date();
+    const cutoff = new Date(now);
+    cutoff.setDate(cutoff.getDate() - days);
+
+    const patients = await prisma.patient.findMany({
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        visits: { select: { scheduledDate: true, attendance: true } },
+      },
+    });
+
+    const candidates = patients
+      .map((p) => {
+        const presentDates = p.visits
+          .filter((v) => v.attendance === 'PRESENT')
+          .map((v) => v.scheduledDate.getTime());
+        if (!presentDates.length) return null;
+        const lastVisit = new Date(Math.max(...presentDates));
+        const hasUpcoming = p.visits.some(
+          (v) => v.attendance === 'SCHEDULED' && v.scheduledDate.getTime() > now.getTime()
+        );
+        if (hasUpcoming || lastVisit > cutoff) return null;
+        const daysSince = Math.floor((now.getTime() - lastVisit.getTime()) / 86400000);
+        return {
+          patient: { id: p.id, name: p.name, phone: p.phone },
+          lastVisit: lastVisit.toISOString(),
+          daysSince,
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null)
+      .sort((a, b) => a.daysSince - b.daysSince)
+      .slice(0, 30);
+
+    res.json(candidates);
+  })
+);
+
 export default router;

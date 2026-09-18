@@ -15,6 +15,7 @@ export type NavIconName =
   | 'payments'
   | 'expenses'
   | 'reports'
+  | 'analytics'
   | 'settings'
   // Used on the dashboard tiles rather than in the sidebar.
   | 'trend'
@@ -91,6 +92,15 @@ const paths: Record<NavIconName, JSX.Element> = {
     <>
       <path d="M3.5 20.5h17" />
       <path d="M6.5 20.5v-6M11 20.5v-9.5M15.5 20.5v-4M20 20.5v-12" />
+    </>
+  ),
+  // A magnifying glass over a pulse: looking closely at what the clinic's activity is made of,
+  // next to Reports' plain bars for the money side.
+  analytics: (
+    <>
+      <circle cx="10" cy="10" r="6.5" />
+      <path d="M15 15l5.5 5.5" />
+      <path d="M6.7 10.3l1.6-3 1.4 4.6 1.6-3.6 1.5 2" />
     </>
   ),
   // A cog, drawn simply enough to stay legible at 20px.

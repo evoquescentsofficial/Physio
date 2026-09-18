@@ -17,6 +17,7 @@ const nav: { to: string; label: string; icon: NavIconName; end?: boolean }[] = [
   { to: '/payments', label: 'Payments', icon: 'payments' },
   { to: '/expenses', label: 'Expenses', icon: 'expenses' },
   { to: '/reports', label: 'Reports & P/L', icon: 'reports' },
+  { to: '/analytics', label: 'Analytics', icon: 'analytics' },
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ];
 

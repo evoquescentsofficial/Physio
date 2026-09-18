@@ -537,6 +537,15 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
                   >
                     Print
                   </Link>
+                  {d.exercises && d.exercises.length > 0 && (
+                    <Link
+                      to={`/patients/${patient.id}/hep/${d.id}`}
+                      className="btn-secondary !py-1 !text-xs"
+                      title="Open the printable home exercise handout"
+                    >
+                      Home exercises
+                    </Link>
+                  )}
                   <IconButton
                     icon="edit"
                     label="Edit assessment"

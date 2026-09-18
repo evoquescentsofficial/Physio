@@ -1214,6 +1214,106 @@ function handle(method: string, path: string, params: any, body: any): any {
         .filter((a) => a.credit > 0)
         .sort((a, b) => b.credit - a.credit);
     }
+
+    // Mirrors /reports/analytics on the server: caseload mix, each doctor's diary, new
+    // registrations — the operational picture rather than the money one.
+    if (seg[1] === 'analytics') {
+      const { from, to } = resolveRange(params);
+      const bucket = bucketFor(from, to);
+      const bKeys = bucketKeys(from, to, bucket);
+
+      const diagnosisCounts = new Map<string, number>();
+      for (const d of db.diagnoses) {
+        const dDate = new Date(d.date);
+        if (dDate < from || dDate > to) continue;
+        const title = (d.title || '').trim();
+        if (!title) continue;
+        diagnosisCounts.set(title, (diagnosisCounts.get(title) || 0) + 1);
+      }
+      const topDiagnoses = [...diagnosisCounts.entries()]
+        .map(([title, count]) => ({ title, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 8);
+
+      const byDoctor = new Map<string, { sessions: number; billed: number; absent: number }>();
+      for (const v of db.visits) {
+        if (!v.doctorId) continue;
+        const vDate = new Date(v.scheduledDate);
+        if (vDate < from || vDate > to) continue;
+        if (v.attendance !== 'PRESENT' && v.attendance !== 'ABSENT') continue;
+        const row = byDoctor.get(v.doctorId) || { sessions: 0, billed: 0, absent: 0 };
+        if (v.attendance === 'PRESENT') {
+          row.sessions += 1;
+          row.billed += v.fee;
+        } else {
+          row.absent += 1;
+        }
+        byDoctor.set(v.doctorId, row);
+      }
+      const doctorActivity = db.doctors
+        .map((d) => {
+          const row = byDoctor.get(d.id) || { sessions: 0, billed: 0, absent: 0 };
+          const booked = row.sessions + row.absent;
+          return {
+            doctorId: d.id,
+            name: d.name,
+            sessions: row.sessions,
+            billed: row.billed,
+            attendanceRate: booked ? Math.round((row.sessions / booked) * 100) : null,
+          };
+        })
+        .filter((d) => d.sessions > 0 || d.billed > 0)
+        .sort((a, b) => b.billed - a.billed);
+
+      const patientsByBucket: Record<string, number> = {};
+      for (const key of bKeys) patientsByBucket[key] = 0;
+      for (const p of db.patients) {
+        const pDate = new Date(p.createdAt);
+        if (pDate < from || pDate > to) continue;
+        const key = bucketKey(pDate, bucket);
+        if (patientsByBucket[key] !== undefined) patientsByBucket[key] += 1;
+      }
+
+      return {
+        topDiagnoses,
+        doctorActivity,
+        newPatients: bKeys.map((key) => ({
+          month: bucketLabel(key, bucket),
+          count: patientsByBucket[key],
+        })),
+      };
+    }
+
+    // Mirrors /reports/reactivation: patients who have gone quiet and have nothing booked.
+    if (seg[1] === 'reactivation') {
+      const days = Math.max(1, Math.min(365, Number(params?.days) || 45));
+      const now = new Date();
+      const cutoff = new Date(now);
+      cutoff.setDate(cutoff.getDate() - days);
+
+      return db.patients
+        .map((p) => {
+          const patientVisits = db.visits.filter((v) => v.patientId === p.id);
+          const presentDates = patientVisits
+            .filter((v) => v.attendance === 'PRESENT')
+            .map((v) => new Date(v.scheduledDate).getTime());
+          if (!presentDates.length) return null;
+          const lastVisit = new Date(Math.max(...presentDates));
+          const hasUpcoming = patientVisits.some(
+            (v) => v.attendance === 'SCHEDULED' && new Date(v.scheduledDate).getTime() > now.getTime()
+          );
+          if (hasUpcoming || lastVisit > cutoff) return null;
+          const daysSince = Math.floor((now.getTime() - lastVisit.getTime()) / 86400000);
+          return {
+            patient: { id: p.id, name: p.name, phone: p.phone },
+            lastVisit: lastVisit.toISOString(),
+            daysSince,
+          };
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null)
+        .sort((a, b) => a.daysSince - b.daysSince)
+        .slice(0, 30);
+    }
   }
 
   throw { status: 404, error: `Demo API has no handler for ${method.toUpperCase()} ${path}` };
