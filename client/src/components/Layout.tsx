@@ -11,6 +11,7 @@ import { resetDemoData } from '../api/demoAdapter';
 const nav: { to: string; label: string; icon: NavIconName; end?: boolean }[] = [
   { to: '/', label: 'Dashboard', icon: 'dashboard', end: true },
   { to: '/patients', label: 'Patients', icon: 'patients' },
+  { to: '/calendar', label: 'Calendar', icon: 'calendar' },
   { to: '/sessions', label: 'Sessions & Attendance', icon: 'sessions' },
   { to: '/doctors', label: 'Doctors', icon: 'doctors' },
   { to: '/payments', label: 'Payments', icon: 'payments' },

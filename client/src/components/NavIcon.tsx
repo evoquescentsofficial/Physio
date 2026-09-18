@@ -10,6 +10,7 @@ export type NavIconName =
   | 'dashboard'
   | 'patients'
   | 'sessions'
+  | 'calendar'
   | 'doctors'
   | 'payments'
   | 'expenses'
@@ -46,6 +47,18 @@ const paths: Record<NavIconName, JSX.Element> = {
       <rect x="3" y="4.5" width="18" height="16.5" rx="2.5" />
       <path d="M3 9.5h18M8 2.5v4M16 2.5v4" />
       <path d="M8.75 15.25l2.25 2.25 4.25-4.25" />
+    </>
+  ),
+  // A calendar with a scatter of days: the month laid out at a glance, not one row at a time.
+  calendar: (
+    <>
+      <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+      <path d="M3 9.5h18M8 2.5v4M16 2.5v4" />
+      <circle cx="8" cy="14" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="14" r="1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="14" r="1" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="17.5" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="17.5" r="1" fill="currentColor" stroke="none" />
     </>
   ),
   // A stethoscope: the clinicians.

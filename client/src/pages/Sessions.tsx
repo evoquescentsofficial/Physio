@@ -239,7 +239,7 @@ export default function Sessions() {
   );
 }
 
-function CarryModal({
+export function CarryModal({
   visit,
   onClose,
   reload,
