@@ -66,14 +66,18 @@ export default function DoctorEarningsPanel({ onPaid }: { onPaid: () => void }) 
         ? `Posted ${res.data.posted} ${res.data.posted === 1 ? 'salary' : 'salaries'} for ${monthLabel(
             period
           )} — ${currency(res.data.total)} added to expenses.`
-        : `Salaries for ${monthLabel(period)} were already posted. Nothing was paid twice.`
+        : res.data.skipped
+          ? `Salaries for ${monthLabel(period)} were already posted. Nothing was paid twice.`
+          : `No active salaried doctors to post for ${monthLabel(period)}.`
     );
     await load();
     onPaid();
   }
 
   const commission = rows.filter((r) => r.doctor.employmentType === 'COMMISSION');
-  const salaried = rows.filter((r) => r.doctor.employmentType !== 'COMMISSION');
+  // Only active doctors are ever postable — /post-salaries skips inactive ones — so the bill
+  // shown here has to match that or the button promises a post that never actually happens.
+  const salaried = rows.filter((r) => r.doctor.employmentType !== 'COMMISSION' && r.doctor.active);
   const salaryBill = salaried.reduce((sum, r) => sum + (r.doctor.monthlySalary || 0), 0);
 
   return (
