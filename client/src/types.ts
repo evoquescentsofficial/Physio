@@ -1,10 +1,24 @@
-export type Role = 'ADMIN' | 'DOCTOR' | 'RECEPTIONIST';
+export type Role = 'ADMIN' | 'DOCTOR' | 'JUNIOR_DOCTOR' | 'RECEPTIONIST';
 
 export interface User {
   id: string;
   name: string;
   email: string;
   role: Role;
+  createdAt?: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  userId: string | null;
+  userName: string;
+  userRole: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  patientId: string | null;
+  summary: string;
+  createdAt: string;
 }
 
 export interface Patient {
@@ -46,6 +60,8 @@ export interface Attachment {
 export interface Diagnosis {
   id: string;
   patientId: string;
+  /** Present when fetched from the clinic-wide list (e.g. the "needs review" panel). */
+  patient?: { name: string; phone: string };
   date: string;
   title: string;
   details?: string | null;
@@ -68,6 +84,10 @@ export interface Diagnosis {
   modalities?: string[];
   /** A per-patient dosage override for ticked exercises, keyed by exercise name. */
   exerciseNotes?: Record<string, string>;
+  /** PENDING while a junior doctor's write-up awaits a senior doctor's sign-off. */
+  reviewStatus?: 'PENDING' | 'APPROVED';
+  reviewedByName?: string | null;
+  reviewedAt?: string | null;
   attachments?: Attachment[];
 }
 

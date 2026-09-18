@@ -24,8 +24,10 @@ import {
   Visit,
 } from '../types';
 import { useSettings } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
 import PrescriptionForm from '../components/PrescriptionForm';
 import { ConditionTemplate } from '../../../shared/conditions';
+import { canDeleteRecords, canReview, hasFinancialAccess } from '../../../shared/roles';
 import {
   accountPosition,
   installmentStatus,
@@ -72,6 +74,9 @@ const tabs: { key: Tab; label: string }[] = [
 
 export default function PatientDetail() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
+  const showFinancials = !user || hasFinancialAccess(user.role);
+  const visibleTabs = tabs.filter((t) => showFinancials || (t.key !== 'packages' && t.key !== 'payments'));
   const [patient, setPatient] = useState<Patient | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
 
@@ -124,15 +129,18 @@ export default function PatientDetail() {
             </div>
           </div>
         </div>
-        <div className="grid gap-px bg-ink-100 sm:grid-cols-4">
-          {[
-            ['Package Value', currency(packageValue), ''],
-            ['Total Paid', currency(totalPaid), ''],
-            creditBalance > 0
-              ? ['Credit Balance', currency(creditBalance), 'text-emerald-600']
-              : ['Balance Due', currency(balanceDue), balanceDue > 0 ? 'text-red-600' : ''],
-            ['Sessions', `${sessionsDone} done · ${sessionsPending} pending`, ''],
-          ].map(([label, value, tone]) => (
+        <div className={`grid gap-px bg-ink-100 ${showFinancials ? 'sm:grid-cols-4' : ''}`}>
+          {(showFinancials
+            ? [
+                ['Package Value', currency(packageValue), ''],
+                ['Total Paid', currency(totalPaid), ''],
+                creditBalance > 0
+                  ? ['Credit Balance', currency(creditBalance), 'text-emerald-600']
+                  : ['Balance Due', currency(balanceDue), balanceDue > 0 ? 'text-red-600' : ''],
+                ['Sessions', `${sessionsDone} done · ${sessionsPending} pending`, ''],
+              ]
+            : [['Sessions', `${sessionsDone} done · ${sessionsPending} pending`, '']]
+          ).map(([label, value, tone]) => (
             <div key={label} className="bg-white px-5 py-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-ink-400">
                 {label}
@@ -141,7 +149,7 @@ export default function PatientDetail() {
             </div>
           ))}
         </div>
-        {creditBalance > 0 && (
+        {showFinancials && creditBalance > 0 && (
           <div className="border-t border-emerald-100 bg-emerald-50 px-5 py-3 text-sm text-emerald-800">
             This patient has paid <strong>{currency(creditBalance)}</strong> more than they have
             been charged. It stays on their account and is taken off their next package
@@ -153,7 +161,7 @@ export default function PatientDetail() {
       <CheckupFeeBanner patient={patient} reload={load} />
 
       <div className="mb-5 flex flex-wrap gap-1 border-b border-ink-200">
-        {tabs.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -170,9 +178,9 @@ export default function PatientDetail() {
 
       {tab === 'overview' && <Overview patient={patient} />}
       {tab === 'diagnoses' && <Diagnoses patient={patient} reload={load} />}
-      {tab === 'packages' && <Packages patient={patient} reload={load} />}
+      {tab === 'packages' && showFinancials && <Packages patient={patient} reload={load} />}
       {tab === 'sessions' && <Sessions patient={patient} reload={load} />}
-      {tab === 'payments' && <Payments patient={patient} reload={load} />}
+      {tab === 'payments' && showFinancials && <Payments patient={patient} reload={load} />}
     </div>
   );
 }
@@ -462,6 +470,7 @@ function TickSummary({ d }: { d: Diagnosis }) {
 }
 
 function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }) {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Diagnosis | null>(null);
   const [confirming, setConfirming] = useState<Diagnosis | null>(null);
@@ -475,6 +484,11 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
   async function remove(d: Diagnosis) {
     await api.delete(`/diagnoses/${d.id}`);
     setConfirming(null);
+    reload();
+  }
+
+  async function approve(d: Diagnosis) {
+    await api.post(`/diagnoses/${d.id}/review`);
     reload();
   }
 
@@ -523,13 +537,32 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
                         Pain {d.painScore}/10
                       </span>
                     )}
+                    {d.reviewStatus === 'PENDING' && (
+                      <span
+                        className="badge bg-amber-100 text-amber-700"
+                        title="Written up by a junior doctor — needs a senior doctor's sign-off"
+                      >
+                        Pending review
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-ink-400">
                     {formatDate(d.date)}
                     {d.doctor?.name ? ` · ${d.doctor.name}` : d.doctorName ? ` · ${d.doctorName}` : ''}
+                    {d.reviewStatus !== 'PENDING' && d.reviewedByName && (
+                      <> · reviewed by {d.reviewedByName}</>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
+                  {d.reviewStatus === 'PENDING' && user && canReview(user.role) && (
+                    <button
+                      className="btn-secondary !border-emerald-200 !py-1 !text-xs !text-emerald-700 hover:!bg-emerald-50"
+                      onClick={() => approve(d)}
+                    >
+                      Approve
+                    </button>
+                  )}
                   <Link
                     to={`/patients/${patient.id}/prescription/${d.id}`}
                     className="btn-secondary !py-1 !text-xs"
@@ -554,12 +587,14 @@ function Diagnoses({ patient, reload }: { patient: Patient; reload: () => void }
                       setOpen(true);
                     }}
                   />
-                  <IconButton
-                    icon="trash"
-                    label="Delete assessment"
-                    tone="danger"
-                    onClick={() => setConfirming(d)}
-                  />
+                  {user && canDeleteRecords(user.role) && (
+                    <IconButton
+                      icon="trash"
+                      label="Delete assessment"
+                      tone="danger"
+                      onClick={() => setConfirming(d)}
+                    />
+                  )}
                 </div>
               </div>
               <TickSummary d={d} />
@@ -1930,6 +1965,7 @@ function CarryForwardModal({
 
 function Sessions({ patient, reload }: { patient: Patient; reload: () => void }) {
   const { settings } = useSettings();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
 
@@ -2232,12 +2268,14 @@ function Sessions({ patient, reload }: { patient: Patient; reload: () => void })
                       )}
                         </>
                       )}
-                      <IconButton
-                        icon="trash"
-                        label="Delete this session permanently"
-                        tone="danger"
-                        onClick={() => setConfirmingVisit(v)}
-                      />
+                      {user && canDeleteRecords(user.role) && (
+                        <IconButton
+                          icon="trash"
+                          label="Delete this session permanently"
+                          tone="danger"
+                          onClick={() => setConfirmingVisit(v)}
+                        />
+                      )}
                     </td>
                   </tr>
                   );

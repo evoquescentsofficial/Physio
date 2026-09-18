@@ -89,6 +89,14 @@ model Diagnosis {
   // all) comes from the clinic's own library, not from one patient's chart.
   exerciseNotes String?
 
+  // reviewStatus: PENDING | APPROVED — set to PENDING when a junior doctor writes the
+  // assessment, so it shows up for a senior doctor to sign off before it counts as done. A
+  // senior doctor's or admin's own work is APPROVED immediately; editing an approved record
+  // as a junior doctor sends it back to PENDING, since it changed after it was reviewed.
+  reviewStatus   String    @default("APPROVED")
+  reviewedByName String?
+  reviewedAt     DateTime?
+
   createdAt DateTime @default(now())
 
   packages    TreatmentPackage[]
@@ -96,6 +104,7 @@ model Diagnosis {
   attachments Attachment[]
 
   @@index([patientId])
+  @@index([reviewStatus])
 }
 
 // Scans, lab reports and X-rays that belong to an assessment. The file itself lives on disk
@@ -312,4 +321,31 @@ model Expense {
 
   @@index([doctorId])
   @@index([date])
+}
+
+// action: CREATE | UPDATE | DELETE | APPROVE | COLLECT
+// entityType: PATIENT | DIAGNOSIS | VISIT | ATTACHMENT | PAYMENT
+//
+// Who did what to which record, for accountability and dispute resolution once more than
+// one member of staff touches the system. The actor's name and role are copied onto the row
+// rather than only linked by id, so the log still reads correctly after a staff account is
+// removed — nothing about "who edited this in March" should depend on that account still
+// existing in June.
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  userName   String
+  userRole   String
+  action     String
+  entityType String
+  entityId   String
+  // Almost everything traces back to a patient; kept alongside entityId so the log can be
+  // filtered and linked to a patient's file regardless of which kind of record changed.
+  patientId  String?
+  summary    String
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([patientId])
+  @@index([entityType, entityId])
 }

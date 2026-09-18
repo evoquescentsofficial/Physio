@@ -6,7 +6,8 @@ import { randomBytes } from 'crypto';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
-import { requireAuth } from '../middleware/auth';
+import { NOT_JUNIOR, requireAuth } from '../middleware/auth';
+import { logAudit } from '../utils/audit';
 
 const router = Router();
 router.use(requireAuth);
@@ -101,6 +102,13 @@ router.post(
         label: meta.data.label || null,
       },
     });
+    await logAudit(req, {
+      action: 'CREATE',
+      entityType: 'ATTACHMENT',
+      entityId: attachment.id,
+      patientId: attachment.patientId,
+      summary: `Uploaded report "${attachment.filename}"`,
+    });
     res.status(201).json(attachment);
   })
 );
@@ -142,12 +150,20 @@ router.get(
 
 router.delete(
   '/:id',
+  NOT_JUNIOR,
   asyncHandler(async (req, res) => {
     const attachment = await prisma.attachment.findUnique({ where: { id: req.params.id } });
     if (!attachment) return res.status(404).json({ error: 'File not found' });
     await prisma.attachment.delete({ where: { id: req.params.id } });
     // The row is the record; a leftover file on disk is tidied up but never blocks the delete.
     fs.unlink(path.join(UPLOAD_DIR, attachment.storedName), () => undefined);
+    await logAudit(req, {
+      action: 'DELETE',
+      entityType: 'ATTACHMENT',
+      entityId: req.params.id,
+      patientId: attachment.patientId,
+      summary: `Deleted report "${attachment.filename}"`,
+    });
     res.status(204).end();
   })
 );

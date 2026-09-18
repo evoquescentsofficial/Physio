@@ -6,6 +6,7 @@ import { ADMIN_ONLY, requireAuth } from '../middleware/auth';
 import { installmentStatus } from '../../../shared/money';
 import { fromRow as fromDiagnosisRow } from './diagnoses.routes';
 import { deleteStoredFilesFor } from './attachments.routes';
+import { logAudit } from '../utils/audit';
 
 const router = Router();
 router.use(requireAuth);
@@ -123,6 +124,13 @@ router.post(
     const patient = await prisma.patient.create({
       data: { ...blanksToNull(data), dob: data.dob ? new Date(data.dob) : null },
     });
+    await logAudit(req, {
+      action: 'CREATE',
+      entityType: 'PATIENT',
+      entityId: patient.id,
+      patientId: patient.id,
+      summary: `Added patient ${patient.name}`,
+    });
     res.status(201).json(patient);
   })
 );
@@ -138,6 +146,13 @@ router.put(
         dob: data.dob ? new Date(data.dob) : undefined,
       },
     });
+    await logAudit(req, {
+      action: 'UPDATE',
+      entityType: 'PATIENT',
+      entityId: patient.id,
+      patientId: patient.id,
+      summary: `Updated patient ${patient.name}`,
+    });
     res.json(patient);
   })
 );
@@ -147,8 +162,17 @@ router.delete(
   '/:id',
   ADMIN_ONLY,
   asyncHandler(async (req, res) => {
+    const existing = await prisma.patient.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Patient not found' });
     await deleteStoredFilesFor({ patientId: req.params.id });
     await prisma.patient.delete({ where: { id: req.params.id } });
+    await logAudit(req, {
+      action: 'DELETE',
+      entityType: 'PATIENT',
+      entityId: req.params.id,
+      patientId: req.params.id,
+      summary: `Deleted patient ${existing.name}`,
+    });
     res.status(204).end();
   })
 );

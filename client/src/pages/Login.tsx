@@ -28,6 +28,19 @@ export default function Login() {
     }
   }
 
+  async function signInAs(demoEmail: string) {
+    setError('');
+    setBusy(true);
+    try {
+      await login(demoEmail, 'demo');
+      navigate('/');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Login failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="flex min-h-screen">
       <div className="hidden flex-1 flex-col justify-between bg-gradient-to-br from-brand-700 via-brand-800 to-brand-950 p-12 text-white lg:flex">
@@ -61,6 +74,30 @@ export default function Login() {
               <span className="font-semibold">Demo mode.</span> Just press Sign in — the login is
               already filled. Sample patients and payments are loaded, and everything is saved only
               in this browser.
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                <span className="text-brand-700">See it as someone else:</span>
+                <button
+                  type="button"
+                  className="font-semibold text-brand-700 underline-offset-2 hover:underline"
+                  onClick={() => signInAs('junior@physio.clinic')}
+                >
+                  Junior doctor
+                </button>
+                <button
+                  type="button"
+                  className="font-semibold text-brand-700 underline-offset-2 hover:underline"
+                  onClick={() => signInAs('doctor@physio.clinic')}
+                >
+                  Senior doctor
+                </button>
+                <button
+                  type="button"
+                  className="font-semibold text-brand-700 underline-offset-2 hover:underline"
+                  onClick={() => signInAs('reception@physio.clinic')}
+                >
+                  Front desk
+                </button>
+              </div>
             </div>
           )}
 

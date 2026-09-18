@@ -18,9 +18,10 @@ import { api } from '../api/client';
 import { Card, EmptyState, currency, formatDate } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
-import { DuePayment, Visit } from '../types';
+import { DuePayment, Diagnosis, Visit } from '../types';
 import NavIcon, { NavIconName } from '../components/NavIcon';
 import { CYCLE_LABELS, isRecurring } from '../../../shared/packages';
+import { canReview, hasFinancialAccess } from '../../../shared/roles';
 
 interface DashboardData {
   totalPatients: number;
@@ -76,6 +77,35 @@ function DueReminders({ rows }: { rows: DuePayment[] }) {
             >
               {r.overdue ? 'Overdue' : 'Due'} {formatDate(r.dueDate)}
             </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+/** Assessments a junior doctor wrote up that a senior doctor has not yet signed off on. */
+function NeedsReview({ rows }: { rows: Diagnosis[] }) {
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-baseline justify-between border-b border-ink-100 px-5 py-4">
+        <div>
+          <h3 className="font-semibold text-ink-900">Needs review</h3>
+          <p className="text-xs text-ink-400">Written up by a junior doctor, waiting on a sign-off</p>
+        </div>
+        <span className="badge bg-amber-100 text-amber-700">{rows.length}</span>
+      </div>
+      <ul className="divide-y divide-ink-100">
+        {rows.map((d) => (
+          <li key={d.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
+            <Link
+              to={`/patients/${d.patientId}`}
+              className="min-w-0 flex-1 text-sm font-medium text-brand-700 hover:underline"
+            >
+              {d.patient?.name || 'Patient'}
+              <span className="ml-2 font-normal text-ink-500">{d.title}</span>
+            </Link>
+            <span className="text-xs text-ink-400">{formatDate(d.date)}</span>
           </li>
         ))}
       </ul>
@@ -183,16 +213,25 @@ function Kpi({
 export default function Dashboard() {
   const { user } = useAuth();
   const { settings } = useSettings();
+  const showFinancials = !!user && hasFinancialAccess(user.role);
+  const showReview = !!user && canReview(user.role);
   const [data, setData] = useState<DashboardData | null>(null);
   const [revenue, setRevenue] = useState<any[]>([]);
   const [expenseSummary, setExpenseSummary] = useState<{ byCategory: any[] }>({ byCategory: [] });
   const [pl, setPl] = useState<any[]>([]);
+  const [pendingReview, setPendingReview] = useState<Diagnosis[]>([]);
 
   useEffect(() => {
     api.get('/reports/dashboard').then((r) => setData(r.data));
-    api.get('/reports/revenue?days=30').then((r) => setRevenue(r.data));
-    api.get('/reports/expenses-summary?days=180').then((r) => setExpenseSummary(r.data));
-    api.get('/reports/profit-loss?days=180').then((r) => setPl(r.data.rows));
+    if (showFinancials) {
+      api.get('/reports/revenue?days=30').then((r) => setRevenue(r.data));
+      api.get('/reports/expenses-summary?days=180').then((r) => setExpenseSummary(r.data));
+      api.get('/reports/profit-loss?days=180').then((r) => setPl(r.data.rows));
+    }
+    if (showReview) {
+      api.get('/diagnoses', { params: { reviewStatus: 'PENDING' } }).then((r) => setPendingReview(r.data));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const hour = new Date().getHours();
@@ -253,43 +292,48 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* This month's money */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi
-          label="Revenue this month"
-          value={data ? currency(data.monthRevenue) : '—'}
-          tone="emerald"
-          icon="payments"
-          to="/payments"
-        />
-        <Kpi
-          label="Expenses this month"
-          value={data ? currency(data.monthExpenses) : '—'}
-          tone="amber"
-          icon="expenses"
-          to="/expenses"
-        />
-        <Kpi
-          label="Profit this month"
-          value={data ? currency(data.monthProfit) : '—'}
-          tone={data && data.monthProfit < 0 ? 'red' : 'emerald'}
-          hint={data && data.monthProfit < 0 ? 'Running at a loss' : 'In profit'}
-          icon="trend"
-          to="/reports"
-        />
-        <Kpi
-          label="Outstanding dues"
-          value={data ? currency(data.outstandingDues) : '—'}
-          tone="red"
-          hint={data?.patientCredits ? `${currency(data.patientCredits)} held as credit` : undefined}
-          icon="alert"
-          to="/payments"
-        />
-      </div>
+      {/* This month's money — nothing here a junior doctor has any business seeing. */}
+      {showFinancials && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Kpi
+            label="Revenue this month"
+            value={data ? currency(data.monthRevenue) : '—'}
+            tone="emerald"
+            icon="payments"
+            to="/payments"
+          />
+          <Kpi
+            label="Expenses this month"
+            value={data ? currency(data.monthExpenses) : '—'}
+            tone="amber"
+            icon="expenses"
+            to="/expenses"
+          />
+          <Kpi
+            label="Profit this month"
+            value={data ? currency(data.monthProfit) : '—'}
+            tone={data && data.monthProfit < 0 ? 'red' : 'emerald'}
+            hint={data && data.monthProfit < 0 ? 'Running at a loss' : 'In profit'}
+            icon="trend"
+            to="/reports"
+          />
+          <Kpi
+            label="Outstanding dues"
+            value={data ? currency(data.outstandingDues) : '—'}
+            tone="red"
+            hint={data?.patientCredits ? `${currency(data.patientCredits)} held as credit` : undefined}
+            icon="alert"
+            to="/payments"
+          />
+        </div>
+      )}
 
       {/* Money the clinic is waiting on. A monthly package falls due quietly, so the day
           starts with a list of who to remind rather than a number nobody chases. */}
-      {!!data?.duePayments?.length && <DueReminders rows={data.duePayments} />}
+      {showFinancials && !!data?.duePayments?.length && <DueReminders rows={data.duePayments} />}
+
+      {/* A senior doctor's or admin's own to-do: junior doctors' write-ups awaiting sign-off. */}
+      {showReview && pendingReview.length > 0 && <NeedsReview rows={pendingReview} />}
 
       {/* Practice health */}
       <div className="grid gap-4 sm:grid-cols-3">
@@ -316,8 +360,9 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        {/* Revenue trend */}
+      <div className={`grid gap-6 ${showFinancials ? 'xl:grid-cols-3' : ''}`}>
+        {/* Revenue trend — money, so it's not a junior doctor's business. */}
+        {showFinancials && (
         <Card className="p-5 xl:col-span-2">
           <div className="mb-4 flex items-baseline justify-between">
             <div>
@@ -368,6 +413,7 @@ export default function Dashboard() {
             </AreaChart>
           </ResponsiveContainer>
         </Card>
+        )}
 
         {/* Today's list */}
         <Card className="flex flex-col overflow-hidden">
@@ -440,6 +486,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {showFinancials && (
       <div className="grid gap-6 xl:grid-cols-3">
         {/* Money in vs money out */}
         <Card className="p-5 xl:col-span-2">
@@ -555,6 +602,7 @@ export default function Dashboard() {
           )}
         </Card>
       </div>
+      )}
     </div>
   );
 }

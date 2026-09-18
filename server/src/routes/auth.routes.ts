@@ -72,7 +72,7 @@ const createUserSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
   password: z.string().min(6),
-  role: z.enum(['ADMIN', 'DOCTOR', 'RECEPTIONIST']).default('RECEPTIONIST'),
+  role: z.enum(['ADMIN', 'DOCTOR', 'JUNIOR_DOCTOR', 'RECEPTIONIST']).default('RECEPTIONIST'),
 });
 
 router.post(

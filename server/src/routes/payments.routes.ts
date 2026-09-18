@@ -2,10 +2,14 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
-import { ADMIN_ONLY, requireAuth } from '../middleware/auth';
+import { ADMIN_ONLY, NOT_JUNIOR, requireAuth } from '../middleware/auth';
+import { logAudit } from '../utils/audit';
 
 const router = Router();
 router.use(requireAuth);
+// Money is entirely off-limits to a junior doctor — nothing below this line is theirs to see
+// or touch, not just the delete.
+router.use(NOT_JUNIOR);
 
 const paymentSchema = z.object({
   patientId: z.string().min(1),
@@ -57,6 +61,14 @@ router.post(
       await prisma.visit.update({ where: { id: data.visitId }, data: { feeCollected: true } });
     }
 
+    await logAudit(req, {
+      action: 'COLLECT',
+      entityType: 'PAYMENT',
+      entityId: payment.id,
+      patientId: payment.patientId,
+      summary: `Recorded a ${payment.type.toLowerCase().replace(/_/g, ' ')} payment of Rs ${payment.amount}`,
+    });
+
     res.status(201).json(payment);
   })
 );
@@ -78,7 +90,16 @@ router.delete(
   '/:id',
   ADMIN_ONLY,
   asyncHandler(async (req, res) => {
+    const existing = await prisma.payment.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Payment not found' });
     await prisma.payment.delete({ where: { id: req.params.id } });
+    await logAudit(req, {
+      action: 'DELETE',
+      entityType: 'PAYMENT',
+      entityId: req.params.id,
+      patientId: existing.patientId,
+      summary: `Deleted a Rs ${existing.amount} payment`,
+    });
     res.status(204).end();
   })
 );

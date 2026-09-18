@@ -17,6 +17,8 @@ export type NavIconName =
   | 'reports'
   | 'analytics'
   | 'settings'
+  | 'staff'
+  | 'activityLog'
   // Used on the dashboard tiles rather than in the sidebar.
   | 'trend'
   | 'alert'
@@ -109,6 +111,22 @@ const paths: Record<NavIconName, JSX.Element> = {
       <path d="M3.5 7h11M18.5 7h2M3.5 17h2M9.5 17h11" />
       <circle cx="16.5" cy="7" r="2.4" />
       <circle cx="7.5" cy="17" r="2.4" />
+    </>
+  ),
+  // A person with an ID badge: staff accounts, not patients.
+  staff: (
+    <>
+      <circle cx="12" cy="8.5" r="3.25" />
+      <path d="M5.5 20.5a6.5 6.5 0 0 1 13 0" />
+      <rect x="9.5" y="13.5" width="5" height="4.5" rx="1" />
+    </>
+  ),
+  // A clock with a trailing arc: what happened, and when.
+  activityLog: (
+    <>
+      <circle cx="12" cy="12.5" r="8.5" />
+      <path d="M12 8v4.5l3 2" />
+      <path d="M4.5 5.5v4h4" />
     </>
   ),
   // A line climbing: profit.

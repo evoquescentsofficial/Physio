@@ -232,6 +232,38 @@ export function buildDemoDb(): DemoDb {
     payments: [],
     expenses: [],
     attachments: [],
+    users: [
+      {
+        id: 'usr_admin',
+        name: 'Clinic Admin',
+        email: 'admin@physio.clinic',
+        role: 'ADMIN',
+        createdAt: new Date(2025, 0, 1).toISOString(),
+      },
+      {
+        id: 'usr_senior',
+        name: 'Dr. Imran Shah',
+        email: 'doctor@physio.clinic',
+        role: 'DOCTOR',
+        createdAt: new Date(2025, 0, 1).toISOString(),
+      },
+      {
+        id: 'usr_junior',
+        name: 'Dr. Bilal (Trainee)',
+        email: 'junior@physio.clinic',
+        role: 'JUNIOR_DOCTOR',
+        createdAt: new Date(2025, 6, 1).toISOString(),
+      },
+      {
+        id: 'usr_reception',
+        name: 'Front Desk',
+        email: 'reception@physio.clinic',
+        role: 'RECEPTIONIST',
+        createdAt: new Date(2025, 0, 1).toISOString(),
+      },
+    ],
+    auditLog: [],
+    session: null,
   };
 
   // The last two columns are the credentials block printed on the prescription, and whether
@@ -384,6 +416,11 @@ export function buildDemoDb(): DemoDb {
       checkedDiagnoses: assessment.diagnoses,
       exercises: assessment.exercises,
       modalities: assessment.modalities,
+      // The clinic's very first patient shows what a junior doctor's write-up looks like
+      // before anyone senior has reviewed it — everyone else's is already approved.
+      reviewStatus: idx === 0 ? 'PENDING' : 'APPROVED',
+      reviewedByName: idx === 0 ? null : db.doctors[idx % db.doctors.length].name,
+      reviewedAt: idx === 0 ? null : registered.toISOString(),
     });
 
     // the two newest patients are checkup-only so far — no package yet

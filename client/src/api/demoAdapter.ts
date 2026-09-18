@@ -16,10 +16,11 @@ import {
   carryForwardBlockedReason,
   nextSessionNumber,
 } from '../../../shared/sessions';
+import { needsReview } from '../../../shared/roles';
 
 // Bump when the stored shape changes, so browsers holding an older demo database
 // rebuild it instead of crashing on fields that did not exist then.
-const STORAGE_KEY = 'physio-demo-db-v4';
+const STORAGE_KEY = 'physio-demo-db-v5';
 
 function load(): DemoDb {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -59,6 +60,34 @@ export function resetDemoData() {
 
 let counter = Date.now();
 const newId = (prefix: string) => `${prefix}${(counter++).toString(36)}`;
+
+/** Whoever is signed in to this demo — there is no server session to ask instead. */
+function currentUser() {
+  return db.session || { id: 'usr_admin', name: 'Clinic Admin', email: 'admin@physio.clinic', role: 'ADMIN' };
+}
+
+/** Mirrors logAudit on the server, writing into the demo's own in-browser log. */
+function logAudit(opts: {
+  action: string;
+  entityType: string;
+  entityId: string;
+  summary: string;
+  patientId?: string | null;
+}) {
+  const user = currentUser();
+  db.auditLog.unshift({
+    id: newId('aud_'),
+    userId: user.id,
+    userName: user.name,
+    userRole: user.role,
+    action: opts.action,
+    entityType: opts.entityType,
+    entityId: opts.entityId,
+    patientId: opts.patientId || null,
+    summary: opts.summary,
+    createdAt: new Date().toISOString(),
+  });
+}
 
 const startOfToday = () => {
   const d = new Date();
@@ -207,13 +236,64 @@ function handle(method: string, path: string, params: any, body: any): any {
 
   // ---- auth ----
   if (path === '/auth/login' && method === 'post') {
-    return {
-      token: 'demo-token',
-      user: { id: 'demo', name: 'Clinic Admin', email: body.email, role: 'ADMIN' },
-    };
+    // A recognised demo account signs in as itself, role and all; anything else — including
+    // the prefilled admin login — falls back to the admin account, exactly as before.
+    const match = db.users.find((u) => u.email.toLowerCase() === (body.email || '').toLowerCase());
+    const user = match
+      ? { id: match.id, name: match.name, email: match.email, role: match.role }
+      : { id: 'usr_admin', name: 'Clinic Admin', email: body.email, role: 'ADMIN' };
+    db.session = user;
+    persist();
+    return { token: 'demo-token', user };
   }
   if (path === '/auth/me') {
-    return { user: { id: 'demo', name: 'Clinic Admin', email: 'admin@physio.clinic', role: 'ADMIN' } };
+    return { user: currentUser() };
+  }
+
+  // ---- staff accounts ----
+  if (seg[0] === 'auth' && seg[1] === 'users') {
+    if (seg.length === 2 && method === 'get') {
+      return db.users
+        .slice()
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map(({ ...u }) => u);
+    }
+    if (seg.length === 2 && method === 'post') {
+      if (db.users.some((u) => u.email.toLowerCase() === body.email.toLowerCase())) {
+        throw { status: 400, error: 'An account with that email already exists.' };
+      }
+      const user = {
+        id: newId('usr_'),
+        name: body.name,
+        email: body.email,
+        role: body.role || 'RECEPTIONIST',
+        createdAt: new Date().toISOString(),
+      };
+      db.users.push(user);
+      persist();
+      return user;
+    }
+    if (seg.length === 3 && method === 'delete') {
+      const target = db.users.find((u) => u.id === seg[2]);
+      if (!target) throw { status: 404, error: 'User not found' };
+      if (target.role === 'ADMIN' && db.users.filter((u) => u.role === 'ADMIN').length <= 1) {
+        throw { status: 400, error: 'The clinic must keep at least one admin' };
+      }
+      db.users = db.users.filter((u) => u.id !== seg[2]);
+      persist();
+      return null;
+    }
+  }
+
+  // ---- activity log ----
+  if (seg[0] === 'audit-log' && method === 'get') {
+    let entries = db.auditLog.slice();
+    if (params?.entityType) entries = entries.filter((e) => e.entityType === params.entityType);
+    if (params?.patientId) entries = entries.filter((e) => e.patientId === params.patientId);
+    if (params?.from) entries = entries.filter((e) => e.createdAt >= params.from);
+    if (params?.to) entries = entries.filter((e) => e.createdAt <= `${params.to}T23:59:59`);
+    const limit = Math.max(1, Math.min(200, Number(params?.limit) || 100));
+    return entries.slice(0, limit);
   }
 
   // ---- settings ----
@@ -416,6 +496,13 @@ function handle(method: string, path: string, params: any, body: any): any {
         updatedAt: now,
       };
       db.patients.push(patient);
+      logAudit({
+        action: 'CREATE',
+        entityType: 'PATIENT',
+        entityId: patient.id,
+        patientId: patient.id,
+        summary: `Added patient ${patient.name}`,
+      });
       persist();
       return patient;
     }
@@ -455,10 +542,18 @@ function handle(method: string, path: string, params: any, body: any): any {
     if (seg.length === 2 && method === 'put') {
       const p = db.patients.find((x) => x.id === patientId)!;
       Object.assign(p, body, { updatedAt: new Date().toISOString() });
+      logAudit({
+        action: 'UPDATE',
+        entityType: 'PATIENT',
+        entityId: p.id,
+        patientId: p.id,
+        summary: `Updated patient ${p.name}`,
+      });
       persist();
       return p;
     }
     if (seg.length === 2 && method === 'delete') {
+      const existing = db.patients.find((x) => x.id === patientId);
       db.patients = db.patients.filter((x) => x.id !== patientId);
       db.diagnoses = db.diagnoses.filter((x) => x.patientId !== patientId);
       const pkgIds = db.packages.filter((k) => k.patientId === patientId).map((k) => k.id);
@@ -466,6 +561,15 @@ function handle(method: string, path: string, params: any, body: any): any {
       db.installments = db.installments.filter((i) => !pkgIds.includes(i.packageId));
       db.visits = db.visits.filter((v) => v.patientId !== patientId);
       db.payments = db.payments.filter((y) => y.patientId !== patientId);
+      if (existing) {
+        logAudit({
+          action: 'DELETE',
+          entityType: 'PATIENT',
+          entityId: patientId,
+          patientId,
+          summary: `Deleted patient ${existing.name}`,
+        });
+      }
       persist();
       return null;
     }
@@ -476,8 +580,9 @@ function handle(method: string, path: string, params: any, body: any): any {
     if (seg.length === 1 && method === 'get') {
       return db.diagnoses
         .filter((d) => !params?.patientId || d.patientId === params.patientId)
+        .filter((d) => !params?.reviewStatus || d.reviewStatus === params.reviewStatus)
         .sort((a, b) => b.date.localeCompare(a.date))
-        .map(withAttachments);
+        .map((d) => ({ ...withAttachments(d), patient: patientBrief(d.patientId) }));
     }
     if (seg.length === 2 && method === 'get') {
       const d = db.diagnoses.find((x) => x.id === seg[1]);
@@ -485,6 +590,8 @@ function handle(method: string, path: string, params: any, body: any): any {
       return withAttachments(d);
     }
     if (seg.length === 1 && method === 'post') {
+      const user = currentUser();
+      const pending = needsReview(user.role);
       const d = {
         id: newId('dia_'),
         patientId: body.patientId,
@@ -508,21 +615,71 @@ function handle(method: string, path: string, params: any, body: any): any {
         exercises: body.exercises || [],
         modalities: body.modalities || [],
         exerciseNotes: body.exerciseNotes || {},
+        reviewStatus: pending ? 'PENDING' : 'APPROVED',
+        reviewedByName: pending ? null : user.name,
+        reviewedAt: pending ? null : new Date().toISOString(),
       };
       db.diagnoses.push(d);
+      logAudit({
+        action: 'CREATE',
+        entityType: 'DIAGNOSIS',
+        entityId: d.id,
+        patientId: d.patientId,
+        summary: `Created assessment "${d.title}"`,
+      });
       persist();
       return withAttachments(d);
     }
     if (seg.length === 2 && method === 'put') {
       const d = db.diagnoses.find((x) => x.id === seg[1])!;
-      Object.assign(d, body, body.date ? { date: new Date(body.date).toISOString() } : {});
+      const user = currentUser();
+      const pending = needsReview(user.role);
+      Object.assign(d, body, body.date ? { date: new Date(body.date).toISOString() } : {}, {
+        reviewStatus: pending ? 'PENDING' : 'APPROVED',
+        reviewedByName: pending ? null : user.name,
+        reviewedAt: pending ? null : new Date().toISOString(),
+      });
+      logAudit({
+        action: 'UPDATE',
+        entityType: 'DIAGNOSIS',
+        entityId: d.id,
+        patientId: d.patientId,
+        summary: `Updated assessment "${d.title}"`,
+      });
+      persist();
+      return withAttachments(d);
+    }
+    if (seg[2] === 'review' && method === 'post') {
+      const d = db.diagnoses.find((x) => x.id === seg[1]);
+      if (!d) throw { status: 404, error: 'Assessment not found' };
+      const user = currentUser();
+      d.reviewStatus = 'APPROVED';
+      d.reviewedByName = user.name;
+      d.reviewedAt = new Date().toISOString();
+      logAudit({
+        action: 'APPROVE',
+        entityType: 'DIAGNOSIS',
+        entityId: d.id,
+        patientId: d.patientId,
+        summary: `Reviewed and approved assessment "${d.title}"`,
+      });
       persist();
       return withAttachments(d);
     }
     if (seg.length === 2 && method === 'delete') {
+      const existing = db.diagnoses.find((x) => x.id === seg[1]);
       db.diagnoses = db.diagnoses.filter((x) => x.id !== seg[1]);
       // The reports attached to an assessment go with it, as they do on the server.
       db.attachments = db.attachments.filter((a) => a.diagnosisId !== seg[1]);
+      if (existing) {
+        logAudit({
+          action: 'DELETE',
+          entityType: 'DIAGNOSIS',
+          entityId: seg[1],
+          patientId: existing.patientId,
+          summary: `Deleted assessment "${existing.title}"`,
+        });
+      }
       persist();
       return null;
     }
@@ -548,11 +705,28 @@ function handle(method: string, path: string, params: any, body: any): any {
         dataUrl: body.dataUrl,
       };
       db.attachments.push(attachment);
+      logAudit({
+        action: 'CREATE',
+        entityType: 'ATTACHMENT',
+        entityId: attachment.id,
+        patientId: attachment.patientId,
+        summary: `Uploaded report "${attachment.filename}"`,
+      });
       persist();
       return attachment;
     }
     if (seg.length === 2 && method === 'delete') {
+      const existing = db.attachments.find((a) => a.id === seg[1]);
       db.attachments = db.attachments.filter((a) => a.id !== seg[1]);
+      if (existing) {
+        logAudit({
+          action: 'DELETE',
+          entityType: 'ATTACHMENT',
+          entityId: seg[1],
+          patientId: existing.patientId,
+          summary: `Deleted report "${existing.filename}"`,
+        });
+      }
       persist();
       return null;
     }
@@ -924,9 +1098,32 @@ function handle(method: string, path: string, params: any, body: any): any {
     }
     if (seg.length === 3 && seg[2] === 'attendance' && method === 'post') {
       const v = db.visits.find((x) => x.id === seg[1])!;
+      const wasCollected = v.feeCollected;
+      const role = currentUser().role;
       v.attendance = body.status;
       v.completedDate = body.status === 'PRESENT' ? new Date().toISOString() : null;
-      if (body.feeCollected !== undefined) v.feeCollected = body.feeCollected;
+      // Whether the fee was collected is money, and stays off-limits to a junior doctor even
+      // on this otherwise-clinical attendance action — same rule as the server.
+      if (body.feeCollected !== undefined && role !== 'JUNIOR_DOCTOR') {
+        v.feeCollected = body.feeCollected;
+      }
+      const patient = db.patients.find((p) => p.id === v.patientId);
+      logAudit({
+        action: 'UPDATE',
+        entityType: 'VISIT',
+        entityId: v.id,
+        patientId: v.patientId,
+        summary: `Marked ${patient?.name || 'a patient'}'s session ${String(body.status).toLowerCase()}`,
+      });
+      if (v.feeCollected && !wasCollected) {
+        logAudit({
+          action: 'COLLECT',
+          entityType: 'VISIT',
+          entityId: v.id,
+          patientId: v.patientId,
+          summary: `Marked ${patient?.name || 'a patient'}'s session fee as collected`,
+        });
+      }
       persist();
       return v;
     }
@@ -973,7 +1170,17 @@ function handle(method: string, path: string, params: any, body: any): any {
             'This session has a payment recorded against it. Cancel the session instead, or delete the payment first.',
         };
       }
+      const existing = db.visits.find((x) => x.id === seg[1]);
       db.visits = db.visits.filter((x) => x.id !== seg[1]);
+      if (existing) {
+        logAudit({
+          action: 'DELETE',
+          entityType: 'VISIT',
+          entityId: seg[1],
+          patientId: existing.patientId,
+          summary: 'Deleted a session',
+        });
+      }
       persist();
       return null;
     }
@@ -1012,6 +1219,13 @@ function handle(method: string, path: string, params: any, body: any): any {
         const v = db.visits.find((x) => x.id === p.visitId);
         if (v) v.feeCollected = true;
       }
+      logAudit({
+        action: 'COLLECT',
+        entityType: 'PAYMENT',
+        entityId: p.id,
+        patientId: p.patientId,
+        summary: `Recorded a ${String(p.type).toLowerCase().replace(/_/g, ' ')} payment of Rs ${p.amount}`,
+      });
       persist();
       return p;
     }
@@ -1022,7 +1236,17 @@ function handle(method: string, path: string, params: any, body: any): any {
       return p;
     }
     if (seg.length === 2 && method === 'delete') {
+      const existing = db.payments.find((x) => x.id === seg[1]);
       db.payments = db.payments.filter((x) => x.id !== seg[1]);
+      if (existing) {
+        logAudit({
+          action: 'DELETE',
+          entityType: 'PAYMENT',
+          entityId: seg[1],
+          patientId: existing.patientId,
+          summary: `Deleted a Rs ${existing.amount} payment`,
+        });
+      }
       persist();
       return null;
     }

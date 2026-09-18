@@ -15,6 +15,7 @@ import reportRoutes from './routes/reports.routes';
 import settingsRoutes from './routes/settings.routes';
 import doctorRoutes from './routes/doctors.routes';
 import attachmentRoutes from './routes/attachments.routes';
+import auditLogRoutes from './routes/auditLog.routes';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -52,6 +53,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/attachments', attachmentRoutes);
+app.use('/api/audit-log', auditLogRoutes);
 
 app.use(errorHandler);
 

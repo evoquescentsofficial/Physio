@@ -7,18 +7,30 @@ import NavIcon, { NavIconName } from './NavIcon';
 import { ConfirmDialog } from './ui';
 import { IS_DEMO } from '../api/client';
 import { resetDemoData } from '../api/demoAdapter';
+import { ROLE_LABELS, canManageStaff, hasFinancialAccess } from '../../../shared/roles';
+import { Role } from '../types';
 
-const nav: { to: string; label: string; icon: NavIconName; end?: boolean }[] = [
+interface NavItem {
+  to: string;
+  label: string;
+  icon: NavIconName;
+  end?: boolean;
+  hidden?: (role: Role) => boolean;
+}
+
+const nav: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: 'dashboard', end: true },
   { to: '/patients', label: 'Patients', icon: 'patients' },
   { to: '/calendar', label: 'Calendar', icon: 'calendar' },
   { to: '/sessions', label: 'Sessions & Attendance', icon: 'sessions' },
-  { to: '/doctors', label: 'Doctors', icon: 'doctors' },
-  { to: '/payments', label: 'Payments', icon: 'payments' },
-  { to: '/expenses', label: 'Expenses', icon: 'expenses' },
-  { to: '/reports', label: 'Reports & P/L', icon: 'reports' },
-  { to: '/analytics', label: 'Analytics', icon: 'analytics' },
-  { to: '/settings', label: 'Settings', icon: 'settings' },
+  { to: '/doctors', label: 'Doctors', icon: 'doctors', hidden: (r) => !hasFinancialAccess(r) },
+  { to: '/payments', label: 'Payments', icon: 'payments', hidden: (r) => !hasFinancialAccess(r) },
+  { to: '/expenses', label: 'Expenses', icon: 'expenses', hidden: (r) => !hasFinancialAccess(r) },
+  { to: '/reports', label: 'Reports & P/L', icon: 'reports', hidden: (r) => !hasFinancialAccess(r) },
+  { to: '/analytics', label: 'Analytics', icon: 'analytics', hidden: (r) => !hasFinancialAccess(r) },
+  { to: '/staff', label: 'Staff', icon: 'staff', hidden: (r) => !canManageStaff(r) },
+  { to: '/activity-log', label: 'Activity log', icon: 'activityLog', hidden: (r) => !canManageStaff(r) },
+  { to: '/settings', label: 'Settings', icon: 'settings', hidden: (r) => !hasFinancialAccess(r) },
 ];
 
 export default function Layout() {
@@ -28,6 +40,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const visibleNav = nav.filter((item) => !item.hidden || !user || !item.hidden(user.role));
 
   function handleLogout() {
     logout();
@@ -57,7 +70,7 @@ export default function Layout() {
         </div>
 
         <nav className="space-y-0.5 px-3 py-2">
-          {nav.map((item) => (
+          {visibleNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -99,8 +112,8 @@ export default function Layout() {
             </div>
             <div className="min-w-0">
               <div className="truncate text-[13.5px] font-semibold leading-tight">{user?.name}</div>
-              <div className="text-[11px] capitalize tracking-wide text-brand-300">
-                {(user?.role || '').toLowerCase()}
+              <div className="text-[11px] tracking-wide text-brand-300">
+                {user ? ROLE_LABELS[user.role] : ''}
               </div>
             </div>
           </div>

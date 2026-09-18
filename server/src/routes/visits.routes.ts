@@ -2,12 +2,13 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
-import { requireAuth } from '../middleware/auth';
+import { NOT_JUNIOR, requireAuth } from '../middleware/auth';
 import {
   canCarryForward,
   carryForwardBlockedReason,
   nextSessionNumber,
 } from '../../../shared/sessions';
+import { logAudit } from '../utils/audit';
 
 const router = Router();
 router.use(requireAuth);
@@ -86,6 +87,13 @@ router.post(
     });
 
     await prisma.visit.createMany({ data: visits });
+    await logAudit(req, {
+      action: 'CREATE',
+      entityType: 'VISIT',
+      entityId: data.patientId,
+      patientId: data.patientId,
+      summary: `Booked ${visits.length} session${visits.length === 1 ? '' : 's'}`,
+    });
     res.status(201).json({ count: visits.length, visits });
   })
 );
@@ -113,14 +121,21 @@ router.put(
 router.post(
   '/:id/attendance',
   asyncHandler(async (req, res) => {
-    const { status, feeCollected } = z
+    const parsed = z
       .object({
         status: z.enum(['PRESENT', 'ABSENT', 'CANCELLED', 'SCHEDULED']),
         feeCollected: z.boolean().optional(),
       })
       .parse(req.body);
+    const { status } = parsed;
+    // Attendance is clinical and open to a junior doctor; whether the fee was collected is
+    // money, and stays off-limits to them even on this otherwise-clinical route.
+    const feeCollected = req.user!.role === 'JUNIOR_DOCTOR' ? undefined : parsed.feeCollected;
 
-    const existing = await prisma.visit.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.visit.findUnique({
+      where: { id: req.params.id },
+      include: { patient: { select: { name: true } } },
+    });
     if (!existing) return res.status(404).json({ error: 'Visit not found' });
 
     const visit = await prisma.visit.update({
@@ -134,6 +149,22 @@ router.post(
         feeCollected: feeCollected ?? undefined,
       },
     });
+    await logAudit(req, {
+      action: 'UPDATE',
+      entityType: 'VISIT',
+      entityId: visit.id,
+      patientId: visit.patientId,
+      summary: `Marked ${existing.patient.name}'s session ${status.toLowerCase()}`,
+    });
+    if (feeCollected && !existing.feeCollected) {
+      await logAudit(req, {
+        action: 'COLLECT',
+        entityType: 'VISIT',
+        entityId: visit.id,
+        patientId: visit.patientId,
+        summary: `Marked ${existing.patient.name}'s session fee as collected`,
+      });
+    }
     res.json(visit);
   })
 );
@@ -261,7 +292,10 @@ router.post(
  */
 router.delete(
   '/:id',
+  NOT_JUNIOR,
   asyncHandler(async (req, res) => {
+    const existing = await prisma.visit.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Visit not found' });
     const linkedPayments = await prisma.payment.count({ where: { visitId: req.params.id } });
     if (linkedPayments > 0) {
       return res.status(409).json({
@@ -270,6 +304,13 @@ router.delete(
       });
     }
     await prisma.visit.delete({ where: { id: req.params.id } });
+    await logAudit(req, {
+      action: 'DELETE',
+      entityType: 'VISIT',
+      entityId: req.params.id,
+      patientId: existing.patientId,
+      summary: `Deleted a session`,
+    });
     res.status(204).end();
   })
 );

@@ -14,6 +14,7 @@ export interface DemoSettings {
   exerciseOptions?: string[];
   modalityOptions?: string[];
   departmentOptions?: string[];
+  exerciseLibrary?: Record<string, { instructions: string; dosage: string; homeExercise: boolean }>;
 }
 
 export interface DemoPatient {
@@ -56,6 +57,10 @@ export interface DemoDiagnosis {
   checkedDiagnoses?: string[];
   exercises?: string[];
   modalities?: string[];
+  exerciseNotes?: Record<string, string>;
+  reviewStatus?: string;
+  reviewedByName?: string | null;
+  reviewedAt?: string | null;
 }
 
 export interface DemoAttachment {
@@ -163,6 +168,27 @@ export interface DemoExpense {
   doctorId?: string | null;
 }
 
+export interface DemoUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  createdAt: string;
+}
+
+export interface DemoAuditEntry {
+  id: string;
+  userId: string | null;
+  userName: string;
+  userRole: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  patientId: string | null;
+  summary: string;
+  createdAt: string;
+}
+
 export interface DemoDb {
   settings: DemoSettings;
   patients: DemoPatient[];
@@ -174,4 +200,8 @@ export interface DemoDb {
   payments: DemoPayment[];
   expenses: DemoExpense[];
   attachments: DemoAttachment[];
+  users: DemoUser[];
+  auditLog: DemoAuditEntry[];
+  /** The demo's one signed-in account — there is no real server session to ask instead. */
+  session: { id: string; name: string; email: string; role: string } | null;
 }
