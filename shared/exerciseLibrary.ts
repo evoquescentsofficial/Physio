@@ -68,13 +68,60 @@ export const EXERCISE_LIBRARY: Record<string, ExerciseEntry> = {
   },
 };
 
-/** A plain fallback for a ticked exercise the library does not know — still shown, not skipped. */
-export function exerciseEntry(name: string): ExerciseEntry {
-  return (
-    EXERCISE_LIBRARY[name] || {
-      instructions: 'Follow the technique your therapist showed you in clinic.',
-      dosage: 'As instructed by your therapist',
-      homeExercise: true,
-    }
-  );
+/** Used when neither the clinic nor the built-in library says anything about this exercise. */
+export const GENERIC_FALLBACK: ExerciseEntry = {
+  instructions: 'Follow the technique your therapist showed you in clinic.',
+  dosage: 'As instructed by your therapist',
+  homeExercise: true,
+};
+
+/** A clinic's own rewrite of the standard library, one whole entry per exercise it has touched. */
+export type ExerciseOverrides = Record<string, ExerciseEntry>;
+
+/**
+ * What the clinic has decided this exercise means, if they have said anything at all —
+ * their own wording replaces the standard entry outright rather than merging field by field,
+ * so editing one line can never leave a stale sentence from the built-in default sitting
+ * next to it.
+ */
+export function exerciseEntry(name: string, clinicOverrides?: ExerciseOverrides | null): ExerciseEntry {
+  return clinicOverrides?.[name] || EXERCISE_LIBRARY[name] || GENERIC_FALLBACK;
+}
+
+/**
+ * The entry to print for one patient: the clinic's own wording (or the standard default),
+ * with the dosage swapped out if this patient's assessment recorded one of their own — the
+ * "15 reps instead of 10 for this patient" case. Only the dosage is ever patient-specific;
+ * how to do the exercise, and whether it's a home exercise at all, is not something a single
+ * patient's chart should be able to override.
+ */
+export function resolveExerciseForPatient(
+  name: string,
+  clinicOverrides: ExerciseOverrides | null | undefined,
+  patientDosage: string | null | undefined
+): ExerciseEntry {
+  const base = exerciseEntry(name, clinicOverrides);
+  const custom = patientDosage?.trim();
+  return custom ? { ...base, dosage: custom } : base;
+}
+
+/**
+ * SQLite has no JSON column, so a name-keyed map — the clinic's exercise overrides, or one
+ * diagnosis's per-patient dosage notes — travels as JSON text, exactly like the tick-box lists
+ * in shared/prescription.ts. Anything unreadable is treated as "nothing recorded".
+ */
+export function parseJsonMap<T>(value: unknown): Record<string, T> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, T>;
+  if (typeof value !== 'string' || !value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function serializeJsonMap<T>(map: Record<string, T> | null | undefined): string | null {
+  if (!map || Object.keys(map).length === 0) return null;
+  return JSON.stringify(map);
 }

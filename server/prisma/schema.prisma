@@ -83,6 +83,11 @@ model Diagnosis {
   checkedDiagnoses String?
   exercises        String?
   modalities       String?
+  // A per-patient dosage override for ticked exercises, e.g. "15 reps instead of the usual
+  // 10" — a JSON object keyed by exercise name, only for the ones the therapist actually
+  // changed. Everything else on the exercise (how to do it, whether it's done at home at
+  // all) comes from the clinic's own library, not from one patient's chart.
+  exerciseNotes String?
 
   createdAt DateTime @default(now())
 
@@ -281,6 +286,10 @@ model ClinicSettings {
   modalityOptions  String?
   // The clinic's departments, as a JSON array. Empty means "use the standard list".
   departmentOptions String?
+  // The clinic's own rewrite of shared/exerciseLibrary.ts's instructions, dosage and
+  // home-vs-clinic flag — a JSON object keyed by exercise name, only for the ones the clinic
+  // has actually edited. Anything not in here prints the built-in default.
+  exerciseLibrary String?
 
   updatedAt DateTime @updatedAt
 }

@@ -37,6 +37,8 @@ export interface PrescriptionFormValues {
   checkedDiagnoses: string[];
   exercises: string[];
   modalities: string[];
+  /** A per-patient dosage override for ticked exercises, keyed by exercise name. */
+  exerciseNotes: Record<string, string>;
 }
 
 /**
@@ -196,12 +198,17 @@ function TickColumn({
   selected,
   onToggle,
   onAdd,
+  notes,
+  onNoteChange,
 }: {
   title: string;
   options: string[];
   selected: string[];
   onToggle: (item: string) => void;
   onAdd: (item: string) => void;
+  /** Per-item free text, e.g. a patient-specific dosage. Only the exercises column uses this. */
+  notes?: Record<string, string>;
+  onNoteChange?: (item: string, value: string) => void;
 }) {
   const [extra, setExtra] = useState('');
   const known = new Set(options);
@@ -228,20 +235,30 @@ function TickColumn({
         {shown.map((item) => {
           const checked = selected.includes(item);
           return (
-            <label
-              key={item}
-              className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] transition-colors ${
-                checked ? 'bg-brand-50 text-brand-900' : 'text-ink-700 hover:bg-ink-50'
-              }`}
-            >
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded"
-                checked={checked}
-                onChange={() => onToggle(item)}
-              />
-              {item}
-            </label>
+            <div key={item}>
+              <label
+                className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] transition-colors ${
+                  checked ? 'bg-brand-50 text-brand-900' : 'text-ink-700 hover:bg-ink-50'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded"
+                  checked={checked}
+                  onChange={() => onToggle(item)}
+                />
+                {item}
+              </label>
+              {checked && onNoteChange && (
+                <input
+                  className="input mb-1 ml-7 !w-[calc(100%-1.75rem)] !py-1 !text-xs"
+                  value={notes?.[item] || ''}
+                  onChange={(e) => onNoteChange(item, e.target.value)}
+                  placeholder="Dosage for this patient (leave blank for the usual)"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              )}
+            </div>
           );
         })}
         <div className="flex gap-1.5 pt-1.5">
@@ -306,6 +323,7 @@ export default function PrescriptionForm({
     checkedDiagnoses: [],
     exercises: [],
     modalities: [],
+    exerciseNotes: {},
   };
 
   const [form, setForm] = useState<PrescriptionFormValues>(emptyForm);
@@ -353,6 +371,7 @@ export default function PrescriptionForm({
         checkedDiagnoses: editing.checkedDiagnoses || [],
         exercises: editing.exercises || [],
         modalities: editing.modalities || [],
+        exerciseNotes: editing.exerciseNotes || {},
       });
       setAttachments(editing.attachments || []);
       setPlanTouched(true);
@@ -382,14 +401,28 @@ export default function PrescriptionForm({
   }
 
   function toggle(field: 'checkedDiagnoses' | 'exercises' | 'modalities', item: string) {
-    setForm((f) => ({
-      ...f,
-      [field]: f[field].includes(item) ? f[field].filter((i) => i !== item) : [...f[field], item],
-    }));
+    setForm((f) => {
+      const nowSelected = f[field].includes(item);
+      // Untick an exercise and its per-patient dosage note goes with it — it would otherwise
+      // linger unseen and reappear if the same exercise were ticked again later.
+      const exerciseNotes =
+        field === 'exercises' && nowSelected
+          ? Object.fromEntries(Object.entries(f.exerciseNotes).filter(([k]) => k !== item))
+          : f.exerciseNotes;
+      return {
+        ...f,
+        [field]: nowSelected ? f[field].filter((i) => i !== item) : [...f[field], item],
+        exerciseNotes,
+      };
+    });
   }
 
   function add(field: 'checkedDiagnoses' | 'exercises' | 'modalities', item: string) {
     setForm((f) => (f[field].includes(item) ? f : { ...f, [field]: [...f[field], item] }));
+  }
+
+  function setExerciseNote(item: string, value: string) {
+    setForm((f) => ({ ...f, exerciseNotes: { ...f.exerciseNotes, [item]: value } }));
   }
 
   async function save(e: FormEvent) {
@@ -418,6 +451,13 @@ export default function PrescriptionForm({
         checkedDiagnoses: form.checkedDiagnoses,
         exercises: form.exercises,
         modalities: form.modalities,
+        // Only ever send notes for exercises still ticked, and only the ones actually
+        // written in — a blank box means "use the clinic's usual dosage".
+        exerciseNotes: Object.fromEntries(
+          Object.entries(form.exerciseNotes).filter(
+            ([name, note]) => form.exercises.includes(name) && note.trim()
+          )
+        ),
       };
       const res = editing
         ? await api.put(`/diagnoses/${editing.id}`, payload)
@@ -550,6 +590,8 @@ export default function PrescriptionForm({
               selected={form.exercises}
               onToggle={(i) => toggle('exercises', i)}
               onAdd={(i) => add('exercises', i)}
+              notes={form.exerciseNotes}
+              onNoteChange={setExerciseNote}
             />
             <TickColumn
               title="Modalities"

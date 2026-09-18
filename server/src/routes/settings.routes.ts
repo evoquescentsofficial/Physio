@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ADMIN_ONLY, requireAuth } from '../middleware/auth';
 import { parseList, serializeList } from '../../../shared/prescription';
+import { ExerciseEntry, parseJsonMap, serializeJsonMap } from '../../../shared/exerciseLibrary';
 
 const router = Router();
 router.use(requireAuth);
@@ -39,6 +40,17 @@ const settingsSchema = z.object({
   exerciseOptions: z.array(z.string()).optional().nullable(),
   modalityOptions: z.array(z.string()).optional().nullable(),
   departmentOptions: z.array(z.string()).optional().nullable(),
+  // The clinic's own rewrite of the built-in exercise library, keyed by exercise name.
+  exerciseLibrary: z
+    .record(
+      z.object({
+        instructions: z.string(),
+        dosage: z.string(),
+        homeExercise: z.boolean(),
+      })
+    )
+    .optional()
+    .nullable(),
 });
 
 const LIST_FIELDS = [
@@ -56,6 +68,7 @@ function fromRow<T extends Record<string, any>>(row: T) {
     exerciseOptions: parseList(row.exerciseOptions),
     modalityOptions: parseList(row.modalityOptions),
     departmentOptions: parseList(row.departmentOptions),
+    exerciseLibrary: parseJsonMap<ExerciseEntry>(row.exerciseLibrary),
   };
 }
 
@@ -67,6 +80,11 @@ router.put(
     const row: Record<string, unknown> = { ...data };
     for (const field of LIST_FIELDS) {
       if (field in data) row[field] = serializeList(data[field] as string[] | null | undefined);
+    }
+    if ('exerciseLibrary' in data) {
+      row.exerciseLibrary = serializeJsonMap(
+        data.exerciseLibrary as Record<string, ExerciseEntry> | null | undefined
+      );
     }
     await getOrCreateSettings();
     const updated = await prisma.clinicSettings.update({

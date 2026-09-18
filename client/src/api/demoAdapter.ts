@@ -507,6 +507,7 @@ function handle(method: string, path: string, params: any, body: any): any {
         checkedDiagnoses: body.checkedDiagnoses || [],
         exercises: body.exercises || [],
         modalities: body.modalities || [],
+        exerciseNotes: body.exerciseNotes || {},
       };
       db.diagnoses.push(d);
       persist();

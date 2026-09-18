@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from './AuthContext';
+import { ExerciseOverrides } from '../../../shared/exerciseLibrary';
 
 export interface ClinicSettings {
   clinicName: string;
@@ -20,6 +21,8 @@ export interface ClinicSettings {
   modalityOptions?: string[];
   /** The clinic's departments. Empty means "use the standard list". */
   departmentOptions?: string[];
+  /** The clinic's own rewrite of the built-in exercise library. Empty means "use the defaults". */
+  exerciseLibrary?: ExerciseOverrides;
 }
 
 const fallback: ClinicSettings = {

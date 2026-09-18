@@ -9,6 +9,72 @@ import {
   DEFAULT_MODALITY_OPTIONS,
   linesToList,
 } from '../../../shared/prescription';
+import {
+  EXERCISE_LIBRARY,
+  ExerciseEntry,
+  ExerciseOverrides,
+  GENERIC_FALLBACK,
+} from '../../../shared/exerciseLibrary';
+
+function isDefaultEntry(name: string, entry: ExerciseEntry) {
+  const base = EXERCISE_LIBRARY[name] || GENERIC_FALLBACK;
+  return (
+    entry.instructions === base.instructions &&
+    entry.dosage === base.dosage &&
+    entry.homeExercise === base.homeExercise
+  );
+}
+
+/** One exercise's editable entry for the home exercise handout, defaulting to the built-in copy. */
+function ExerciseLibraryRow({
+  name,
+  entry,
+  onChange,
+}: {
+  name: string;
+  entry: ExerciseEntry;
+  onChange: (patch: Partial<ExerciseEntry>) => void;
+}) {
+  const customized = !isDefaultEntry(name, entry);
+  return (
+    <div className="rounded-xl border border-ink-200 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-sm font-bold text-ink-900">{name}</span>
+        {customized && (
+          <span className="badge bg-brand-100 text-brand-700">Customized</span>
+        )}
+      </div>
+      <div className="space-y-3">
+        <Field label="Instructions (what the patient reads)">
+          <textarea
+            className="input !text-xs"
+            rows={2}
+            value={entry.instructions}
+            onChange={(e) => onChange({ instructions: e.target.value })}
+          />
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Dosage">
+            <input
+              className="input !text-xs"
+              value={entry.dosage}
+              onChange={(e) => onChange({ dosage: e.target.value })}
+            />
+          </Field>
+          <label className="flex items-center gap-2 pt-6 text-xs text-ink-600">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded"
+              checked={!entry.homeExercise}
+              onChange={(e) => onChange({ homeExercise: !e.target.checked })}
+            />
+            Done by the therapist in clinic, not a home exercise
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /** The tick-box columns are edited as plain lines — one option per line, in printing order. */
 function ListEditor({
@@ -52,6 +118,7 @@ export default function Settings() {
   });
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [libraryDrafts, setLibraryDrafts] = useState<ExerciseOverrides>({});
 
   useEffect(() => {
     setForm(settings);
@@ -61,12 +128,36 @@ export default function Settings() {
       modalities: (settings.modalityOptions || []).join('\n'),
       departments: (settings.departmentOptions || []).join('\n'),
     });
+    setLibraryDrafts(settings.exerciseLibrary || {});
   }, [settings]);
+
+  // The rows shown track whatever is currently in the exercise names box, live — add a new
+  // exercise there and it gets an instructions row immediately, no save round-trip needed.
+  const exerciseNames = linesToList(lists.exercises).length
+    ? linesToList(lists.exercises)
+    : DEFAULT_EXERCISE_OPTIONS;
+
+  function libraryEntry(name: string): ExerciseEntry {
+    return libraryDrafts[name] || EXERCISE_LIBRARY[name] || GENERIC_FALLBACK;
+  }
+
+  function updateLibraryEntry(name: string, patch: Partial<ExerciseEntry>) {
+    setLibraryDrafts((prev) => ({ ...prev, [name]: { ...libraryEntry(name), ...patch } }));
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
+      // Only exercises actually rewritten are saved — anything left matching the built-in
+      // copy is omitted, so it keeps tracking the standard library rather than freezing a
+      // copy of it the clinic never meant to customize.
+      const exerciseLibrary: ExerciseOverrides = {};
+      for (const name of exerciseNames) {
+        const entry = libraryEntry(name);
+        if (!isDefaultEntry(name, entry)) exerciseLibrary[name] = entry;
+      }
+
       await save({
         clinicName: form.clinicName,
         phone: form.phone || null,
@@ -82,6 +173,7 @@ export default function Settings() {
         exerciseOptions: linesToList(lists.exercises),
         modalityOptions: linesToList(lists.modalities),
         departmentOptions: linesToList(lists.departments),
+        exerciseLibrary,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -256,6 +348,25 @@ export default function Settings() {
               fallback={DEFAULT_MODALITY_OPTIONS}
               onChange={(v) => setLists({ ...lists, modalities: v })}
             />
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <h3 className="mb-1 font-semibold text-ink-900">Home exercise instructions</h3>
+          <p className="mb-4 text-sm text-ink-500">
+            What the printed home exercise handout says for each exercise above. Shown pre-filled
+            with the standard wording — edit a field to override it for this clinic, or leave it
+            as-is to keep using the standard one.
+          </p>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {exerciseNames.map((name) => (
+              <ExerciseLibraryRow
+                key={name}
+                name={name}
+                entry={libraryEntry(name)}
+                onChange={(patch) => updateLibraryEntry(name, patch)}
+              />
+            ))}
           </div>
         </Card>
 

@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { asyncHandler } from '../utils/asyncHandler';
 import { requireAuth } from '../middleware/auth';
 import { parseList, serializeList } from '../../../shared/prescription';
+import { parseJsonMap, serializeJsonMap } from '../../../shared/exerciseLibrary';
 import { deleteStoredFilesFor } from './attachments.routes';
 
 const router = Router();
@@ -32,6 +33,9 @@ const diagnosisSchema = z.object({
   checkedDiagnoses: z.array(z.string()).optional().nullable(),
   exercises: z.array(z.string()).optional().nullable(),
   modalities: z.array(z.string()).optional().nullable(),
+  // A dosage override for specific ticked exercises, keyed by exercise name — e.g. this
+  // patient gets 15 reps instead of the clinic's usual 10.
+  exerciseNotes: z.record(z.string()).optional().nullable(),
 });
 
 const LIST_FIELDS = ['checkedDiagnoses', 'exercises', 'modalities'] as const;
@@ -41,6 +45,9 @@ function toRow(data: z.infer<typeof diagnosisSchema> | Partial<z.infer<typeof di
   const row: Record<string, unknown> = { ...data };
   for (const field of LIST_FIELDS) {
     if (field in data) row[field] = serializeList(data[field] as string[] | null | undefined);
+  }
+  if ('exerciseNotes' in data) {
+    row.exerciseNotes = serializeJsonMap(data.exerciseNotes as Record<string, string> | null | undefined);
   }
   return row;
 }
@@ -52,6 +59,7 @@ export function fromRow<T extends Record<string, any>>(row: T) {
     checkedDiagnoses: parseList(row.checkedDiagnoses),
     exercises: parseList(row.exercises),
     modalities: parseList(row.modalities),
+    exerciseNotes: parseJsonMap<string>(row.exerciseNotes),
   };
 }
 

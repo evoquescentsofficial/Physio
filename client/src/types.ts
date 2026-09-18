@@ -66,6 +66,8 @@ export interface Diagnosis {
   checkedDiagnoses?: string[];
   exercises?: string[];
   modalities?: string[];
+  /** A per-patient dosage override for ticked exercises, keyed by exercise name. */
+  exerciseNotes?: Record<string, string>;
   attachments?: Attachment[];
 }
 

@@ -5,7 +5,7 @@ import Logo from '../components/Logo';
 import { Diagnosis, Patient } from '../types';
 import { useSettings } from '../context/SettingsContext';
 import { formatDate } from '../components/ui';
-import { exerciseEntry } from '../../../shared/exerciseLibrary';
+import { resolveExerciseForPatient } from '../../../shared/exerciseLibrary';
 
 /**
  * The home exercise program (HEP), printed — what the patient actually takes away from the
@@ -101,7 +101,11 @@ export default function HepHandout() {
         ) : (
           <ol className="print-keep mt-4 space-y-3">
             {exercises.map((name, i) => {
-              const entry = exerciseEntry(name);
+              const entry = resolveExerciseForPatient(
+                name,
+                settings.exerciseLibrary,
+                diagnosis.exerciseNotes?.[name]
+              );
               return (
                 <li
                   key={name}
@@ -123,6 +127,11 @@ export default function HepHandout() {
                       }`}
                     >
                       {entry.dosage}
+                      {diagnosis.exerciseNotes?.[name]?.trim() && (
+                        <span className="ml-1 font-normal italic text-ink-400">
+                          (set for this patient)
+                        </span>
+                      )}
                     </div>
                   </div>
                 </li>
