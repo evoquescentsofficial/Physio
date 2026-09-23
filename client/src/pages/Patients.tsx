@@ -148,6 +148,7 @@ export default function Patients() {
             <table className="w-full text-sm">
               <thead className="border-b border-ink-100 bg-ink-50/60 text-left">
                 <tr>
+                  <th className="th">#</th>
                   <th className="th">Name</th>
                   <th className="th">Phone</th>
                   <th className="th">Email</th>
@@ -157,8 +158,9 @@ export default function Patients() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
-                {patients.map((p) => (
+                {patients.map((p, i) => (
                   <tr key={p.id} className="hover:bg-brand-50/40">
+                    <td className="px-5 py-3 text-ink-400">{i + 1}</td>
                     <td className="px-5 py-3">
                       <Link
                         to={`/patients/${p.id}`}
